@@ -12,6 +12,7 @@
 | FastAPI | Web framework — handles routes, requests, responses |
 | Uvicorn | ASGI server that runs FastAPI |
 | SQLAlchemy | ORM — interact with PostgreSQL using Python objects |
+| Alembic | Database migrations — version control for your database schema |
 | PostgreSQL | Production database |
 | psycopg2-binary | PostgreSQL driver (used by SQLAlchemy under the hood) |
 | python-dotenv | Loads environment variables from `.env` file |
@@ -32,72 +33,54 @@ Make sure you have these installed before anything else:
 ```bash
 python --version      # Should be 3.10 or higher
 pip --version         # Comes with Python
-```
-
 If you don't have Python, download it from https://python.org (choose 3.10 or higher).
 
----
-
-## First-Time Setup (Clone → Run)
-
-### 1. Clone the repository (if not done already)
-
-```bash
+First-Time Setup (Clone → Run)
+1. Clone the repository (if not done already)
+bash
 git clone https://github.com/YOUR-USERNAME/aisha-ai.git
 cd aisha-ai
-```
-
-### 2. Create your branch from dev
-
-```bash
+2. Create your branch from dev  
+bash
 git checkout dev
 git pull origin dev
 git checkout -b yourname/feature-name
-```
-
-### 3. Create and activate the virtual environment
-
+3. Create and activate the virtual environment
 A virtual environment keeps this project's dependencies isolated from other Python projects on your machine.
 
-```bash
+bash
 cd backend
 python -m venv venv
-```
-
-**Activate it — this step is required every time you open a new terminal:**
+Activate it — this step is required every time you open a new terminal:
 
 Windows (Git Bash or Command Prompt):
-```bash
+
+```
+bash
 source venv\Scripts\activate
-```
+You'll know it's active when you see (venv) at the start of your terminal prompt.
 
+To deactivate when you're done working:
 
-
-You'll know it's active when you see `(venv)` at the start of your terminal prompt.
-
-**To deactivate when you're done working:**
-```bash
+bash
 deactivate
+
 ```
 
-### 4. Install dependencies
 
-```bash
+4. Install dependencies
+bash
 pip install -r requirements.txt
+This installs every package listed in requirements.txt at the exact versions the project was built with. Always use this file — do not install packages individually unless you're adding a new one.
+
+5. Set up your environment variables
 ```
-
-This installs every package listed in `requirements.txt` at the exact versions the project was built with. Always use this file — do not install packages individually unless you're adding a new one.
-
-### 5. Set up your environment variables
-
-```bash
+bash
 cp .env.example .env
-```
+Open the .env file and fill in your actual values:
 
-Open the `.env` file and fill in your actual values:
-
-```env
-DATABASE_URL=
+env
+DATABASE_URL=postgresql://username:password@localhost:5432/aisha_db
 SECRET_KEY=your-secret-key-here
 ANTHROPIC_API_KEY=your-key-here
 GEMINI_API_KEY=your-key-here
@@ -105,170 +88,251 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 WHATSAPP_TOKEN=your-whatsapp-token
 WHATSAPP_VERIFY_TOKEN=your-verify-token
-```
-
-**The `.env` file is gitignored — it will never be pushed to GitHub.**  
+The .env file is gitignored — it will never be pushed to GitHub.
 Never share your keys. Never hardcode them in any Python file.
 
 Where to get each key:
-- `ANTHROPIC_API_KEY` → https://console.anthropic.com
-- `GEMINI_API_KEY` → https://aistudio.google.com
-- `GOOGLE_CLIENT_ID/SECRET` → https://console.cloud.google.com (OAuth credentials)
-- `WHATSAPP_TOKEN` → Meta Developer Portal (Week 3)
-- `SECRET_KEY` → generate one by running: `python -c "import secrets; print(secrets.token_hex(32))"`
 
-### 6. Run the backend server
+DATABASE_URL → PostgreSQL connection string (local)
 
-```bash
+ANTHROPIC_API_KEY → https://console.anthropic.com
+
+GEMINI_API_KEY → https://aistudio.google.com
+
+GOOGLE_CLIENT_ID/SECRET → https://console.cloud.google.com (OAuth credentials)
+
+WHATSAPP_TOKEN → Meta Developer Portal (Week 3)
+
+SECRET_KEY → generate one by running: python -c "import secrets; print(secrets.token_hex(32))"
+
+6. Initialize Alembic for database migrations (First time only)
+Alembic manages database schema changes. You only need to set this up once:
+
+bash
+# Initialize Alembic (only needed once)
+alembic init alembic
+Then configure alembic/env.py to use your models (see the alembic/env.py file — it's already set up to import from app.database and app.models).
+
+7. Create and apply the initial database migration
+bash
+# Generate migration from your SQLAlchemy models
+alembic revision --autogenerate -m "initial schema"
+
+# Apply the migration to create tables
+alembic upgrade head
+This creates all tables (users, products, customers, conversations, orders) in your PostgreSQL database.
+
+What these commands do:
+
+revision --autogenerate — compares your SQLAlchemy models against the database and generates a migration script
+
+upgrade head — applies all pending migrations (creates tables, adds columns, etc.)
+
+8. Run the backend server
+bash
 uvicorn main:app --reload
-```
-
 Breaking this command down:
-- `uvicorn` — the server
-- `main:app` — look in `main.py`, find the variable called `app` (the FastAPI instance)
-- `--reload` — automatically restart the server when you save a file (development only)
 
-The server starts at **http://localhost:8000**
+uvicorn — the server
 
-### 7. Verify it's running
+main:app — look in main.py, find the variable called app (the FastAPI instance)
 
+--reload — automatically restart the server when you save a file (development only)
+
+The server starts at http://localhost:8000
+
+9. Verify it's running
 Open your browser at:
-- **http://localhost:8000** — should return a JSON welcome message
-- **http://localhost:8000/docs** — interactive API documentation (auto-generated by FastAPI)
-- **http://localhost:8000/redoc** — alternative docs view
 
-The `/docs` page is extremely useful. You can test every API endpoint directly from the browser without needing Postman.
+http://localhost:8000 — should return a JSON welcome message
 
----
+http://localhost:8000/docs — interactive API documentation (auto-generated by FastAPI)
 
-## Folder Structure
+http://localhost:8000/redoc — alternative docs view
 
+The /docs page is extremely useful. You can test every API endpoint directly from the browser without needing Postman.
+
+Database Migrations (Alembic)
+Think of Alembic like php artisan migrate — it tracks and applies changes to your database schema.
+
+Everyday migration commands
+bash
+# Check current migration version
+alembic current
+
+# Generate a new migration after changing models
+alembic revision --autogenerate -m "description of change"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Rollback the last migration
+alembic downgrade -1
+
+# Rollback all migrations
+alembic downgrade base
+
+# View migration history
+alembic history
+Typical workflow when changing the database:
+Modify your SQLAlchemy model in app/models.py:
+
+python
+class User(Base):
+    # ... existing columns
+    phone = Column(String(20), nullable=True)  # New column
+Generate a migration:
+
+bash
+alembic revision --autogenerate -m "add phone to users"
+Apply the migration:
+
+bash
+alembic upgrade head
+Commit the migration file to Git:
+
+bash
+git add alembic/versions/
+git commit -m "feat: add phone column to users"
+When you pull a teammate's changes:
+If they added a migration, run:
 ```
+bash
+git pull
+alembic upgrade head   # Applies their migration automatically
+```
+
+Migration files are version controlled
+All migration files live in alembic/versions/ and should be committed to Git. This ensures the entire team has the same database schema history.
+
+Folder Structure
+text
 backend/
+├── alembic/               # Database migration system
+│   ├── versions/          # Individual migration files (commit these!)
+│   ├── env.py             # Alembic configuration (already set up)
+│   └── script.py.mako     # Template for new migrations
 ├── app/
-│   ├── auth/               # Registration, login, JWT, Google OAuth
+│   ├── auth/              # Registration, login, JWT, Google OAuth
 │   │   └── __init__.py
-│   ├── products/           # Product catalogue CRUD
+│   ├── products/          # Product catalogue CRUD
 │   │   └── __init__.py
-│   ├── conversations/      # Conversation logs
+│   ├── conversations/     # Conversation logs
 │   │   └── __init__.py
-│   ├── orders/             # Order management
+│   ├── orders/            # Order management
 │   │   └── __init__.py
-│   ├── webhook/            # WhatsApp incoming message handler
+│   ├── webhook/           # WhatsApp incoming message handler
 │   │   └── __init__.py
-│   ├── ai/                 # AI engine — Claude/Gemini abstraction
+│   ├── ai/                # AI engine — Claude/Gemini abstraction
 │   │   └── __init__.py
+│   ├── database.py        # Database connection and session setup
+│   ├── models.py          # SQLAlchemy models (User, Product, etc.)
 │   └── __init__.py
-├── main.py                 # FastAPI app entry point — all routers registered here
-├── requirements.txt        # All Python dependencies with pinned versions
-├── .env                    # Your local secrets — NEVER commit this
-└── .env.example            # Template showing required variables — safe to commit
-```
+├── main.py                # FastAPI app entry point — all routers registered here
+├── requirements.txt       # All Python dependencies with pinned versions
+├── alembic.ini            # Alembic configuration (database URL, etc.)
+├── .env                   # Your local secrets — NEVER commit this
+└── .env.example           # Template showing required variables — safe to commit
+Each folder inside app/ is a module — self-contained with its own routes, models, and logic.
+__init__.py files are required by Python to treat folders as importable modules.
 
-Each folder inside `app/` is a **module** — self-contained with its own routes, models, and logic.  
-`__init__.py` files are required by Python to treat folders as importable modules.
-
----
-
-## Running the Server (Every Time)
-
+Running the Server (Every Time)
 Every time you open a new terminal session:
-
-```bash
+```
+bash
 cd backend
-venv\Scripts\activate      # Windows
-# or
-source venv/bin/activate   # Mac/Linux
+source venv\Scripts\activate      # Windows
 
-uvicorn main:app --reload
+
+# If anyone added migrations since your last pull
+alembic upgrade head
 ```
 
+# Start the server
+uvicorn main:app --reload
 Two terminals will be running simultaneously during development:
-- One for the backend (`uvicorn main:app --reload`) at port 8000
-- One for the frontend (`npm run dev`) at port 5173
 
----
+One for the backend (uvicorn main:app --reload) at port 8000
 
-## If a Teammate Adds a New Python Package
+One for the frontend (npm run dev) at port 5173
 
+If a Teammate Adds a New Python Package
 After pulling their changes, always run:
 
-```bash
-pip install -r requirements.txt
 ```
-
+bash
+pip install -r requirements.txt
 And if YOU add a new package, update the file so your teammate gets it too:
 
-```bash
+```
+bash
 pip install package-name
 pip freeze > requirements.txt
 git add requirements.txt
 git commit -m "chore: add package-name dependency"
-```
-
----
-
-## Branch & PR Workflow
-
+Branch & PR Workflow
 Same as frontend — this applies to the whole project:
 
-```
+text
 1. Work on your branch        →  git add . && git commit -m "feat: ..."
 2. Push your branch           →  git push origin yourname/feature-name
 3. Open a PR on GitHub        →  base: dev ← compare: yourname/feature-name
 4. Teammate reviews and approves
 5. Merge into dev
 6. Pull dev locally           →  git checkout dev && git pull origin dev
-7. Branch off dev again for next feature
-```
+7. Run migrations if any      →  alembic upgrade head
+8. Branch off dev again for next feature
+Commit message format:
 
-**Commit message format:**
-
-```
+text
 feat: add auth registration endpoint
 fix: correct JWT expiry bug
 chore: update requirements.txt
 refactor: move AI logic to dedicated module
 docs: update README with database setup steps
+Database (PostgreSQL)
+Setup
+Create a PostgreSQL database (local or cloud like Supabase/Neon)
+
+Add your connection string to .env:
+
+text
+DATABASE_URL=postgresql://username:password@localhost:5432/aisha_db
+Run initial migration:
+
 ```
+bash
+alembic upgrade head
+Useful database commands
+bash
+# Check current schema version
+alembic current
 
----
+# Generate new migration after model changes
+alembic revision --autogenerate -m "description"
 
-## Database (PostgreSQL) — Setup Coming Week 2
+# Apply migrations
+alembic upgrade head
+AI Provider Strategy
+The AI engine is designed to be swappable with one config change.
+During development → use Gemini (free, no credit card needed).
+During demos → switch to Claude (better quality).
 
-For now the backend runs without a database connection.  
-In Week 2 we will:
-1. Set up a free PostgreSQL instance on Supabase or Neon
-2. Add the connection string to `.env`
-3. Run migrations to create the tables
+This is handled inside app/ai/ — details added in Week 4.
 
-Instructions will be added to this README at that point.
+Current Status (Week 1 — Scaffolding)
+FastAPI project initialized
 
----
+Virtual environment created
 
-## AI Provider Strategy
+All dependencies installed and pinned in requirements.txt
 
-The AI engine is designed to be swappable with one config change.  
-During development → use **Gemini** (free, no credit card needed).  
-During demos → switch to **Claude** (better quality).
+Folder structure and module placeholders created
 
-This is handled inside `app/ai/` — details added in Week 4.
+.env and .env.example configured
 
----
+Alembic initialized for database migrations
 
-## Current Status (Week 1 — Scaffolding)
+SQLAlchemy models created (User, Product, Customer, Conversation, Order)
 
-- [x] FastAPI project initialized
-- [x] Virtual environment created
-- [x] All dependencies installed and pinned in `requirements.txt`
-- [x] Folder structure and module placeholders created
-- [x] `.env` and `.env.example` configured
-- [ ] `main.py` with base FastAPI app — Week 2
-- [ ] Database models with SQLAlchemy — Week 2
-- [ ] Auth endpoints (register, login, JWT) — Week 2
-- [ ] WhatsApp webhook — Week 3
-- [ ] AI engine — Week 4
-
----
-
-*Update this README when you complete a feature. Add it to the checklist above.*
+Initial database migration generated and applied
