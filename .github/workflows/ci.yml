@@ -1,0 +1,131 @@
+name: AISHA AI — CI
+
+# When does this run?
+# On every push to any branch, and on every pull request targeting dev or main
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+
+  # ─── BACKEND CHECKS ────────────────────────────────────────────────────────
+  backend:
+    name: Backend — Python checks
+    runs-on: ubuntu-latest
+
+    # We need a real PostgreSQL database for the connection test
+    # GitHub Actions can spin one up as a service container
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aisha_db
+        ports:
+          - 5432:5432
+        # Wait until PostgreSQL is actually ready before running tests
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # Step 1 — checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2 — install Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Step 3 — cache pip dependencies
+      # This means the second run onwards downloads nothing —
+      # it reuses the cached packages. Cuts CI time significantly
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # Step 4 — install dependencies
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      # Step 5 — set environment variables for the CI run
+      # These match your .env file but use the CI postgres service above
+      - name: Set environment variables
+        run: |
+          echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/aisha_db" >> $GITHUB_ENV
+          echo "SECRET_KEY=ci-secret-key-not-for-production" >> $GITHUB_ENV
+          echo "ANTHROPIC_API_KEY=placeholder" >> $GITHUB_ENV
+          echo "GEMINI_API_KEY=placeholder" >> $GITHUB_ENV
+          echo "GOOGLE_CLIENT_ID=placeholder" >> $GITHUB_ENV
+          echo "GOOGLE_CLIENT_SECRET=placeholder" >> $GITHUB_ENV
+          echo "WHATSAPP_TOKEN=placeholder" >> $GITHUB_ENV
+          echo "WHATSAPP_VERIFY_TOKEN=placeholder" >> $GITHUB_ENV
+
+      # Step 6 — check that all imports work and models are valid
+      - name: Check imports and database models
+        working-directory: backend
+        run: |
+          python -c "
+          from app.database import engine, Base
+          import app.models
+          Base.metadata.create_all(bind=engine)
+          print('All models imported and tables created successfully')
+          "
+
+      # Step 7 — check that the FastAPI app starts without errors
+      - name: Check FastAPI app loads
+        working-directory: backend
+        run: |
+          python -c "
+          from main import app
+          print('FastAPI app loaded successfully')
+          print('Routes registered:', len(app.routes))
+          "
+
+      # Step 8 — code formatting check with ruff
+      # Ruff checks that your code follows Python standards
+      # It will fail if there are unused imports, bad formatting, etc.
+      - name: Lint with ruff
+        working-directory: backend
+        run: |
+          pip install ruff
+          ruff check . --exclude venv
+
+  # ─── FRONTEND CHECKS ───────────────────────────────────────────────────────
+  frontend:
+    name: Frontend — Node checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install
+
+      # Checks that the React app builds without errors
+      # If any import is broken or component has a syntax error,
+      # this will catch it
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
