@@ -69,8 +69,11 @@ deactivate
 
 
 4. Install dependencies
+```
 bash
+pip install fastapi uvicorn sqlalchemy psycopg2-binary python-dotenv passlib[bcrypt] python-jose[cryptography] httpx google-auth google-auth-oauthlib redis anthropic google-generativeai
 pip install -r requirements.txt
+```
 This installs every package listed in requirements.txt at the exact versions the project was built with. Always use this file — do not install packages individually unless you're adding a new one.
 
 5. Set up your environment variables
