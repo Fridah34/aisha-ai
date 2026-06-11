@@ -3,12 +3,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini").lower()
 
 #function calling for the AI-same way and get a string back
-def get_ai_response(prompt:str,conversation_history: list= []) -> str:
+def get_ai_response(prompt:str,conversation_history: list= None) -> str:
     if conversation_history is None:
         conversation_history = []
+        
+    AI_PROVIDER = os.getenv("AI_PROVIDER", "groq").lower()
+    
     try:
         if AI_PROVIDER == "claude":
             return _call_claude(prompt, conversation_history)
@@ -22,14 +24,14 @@ def get_ai_response(prompt:str,conversation_history: list= []) -> str:
     except Exception as primary_error:
         # If primary provider fails, automatically fall back to Groq
         # This keeps AISHA running even if Gemini has an outage
-        print(f"Primary AI provider failed: {primary_error}")
+        print(f"[ AISHA ] Primary AI provider '{AI_PROVIDER}'failed: {primary_error}")
         
         if AI_PROVIDER != "groq":
             print("Falling back to Groq...")
             try:
                 return _call_groq(prompt,conversation_history)
             except Exception as fallback_error:
-                print(f"Groq fallback also failed: {fallback_error}")
+                print(f"[AISHA]Groq fallback also failed: {fallback_error}")
 
         return (
             "Samahani, kuna tatizo kidogo. Tafadhali jaribu tena baadaye."

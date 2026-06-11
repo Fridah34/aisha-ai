@@ -73,7 +73,19 @@ def invalidate_business_cache(user_id: int):
         print(f"✓ Cache invalidated for business {user_id}")
     except Exception as e:
         print(f"Redis delete error: {e}")
-
+        
+def invalidate_conversation_cache(customer_id: int, user_id: int) -> None:
+    """
+    Clears cached conversation for one customer.Used  during testing
+    """
+    if not REDIS_AVAILABLE:
+        return
+    try:
+        key = f"conv:{user_id}:{customer_id}"
+        redis_client.delte(key)
+        print(f"Conversation cache cleared: customer {customer_id} / business { user_id}")
+    except Exception as e:
+        print(f"Redis delete error: {e}")    
 
 # ─── CONVERSATION CACHE ───────────────────────────────────────────────────────
 # Active conversations are cached so we don't hit PostgreSQL

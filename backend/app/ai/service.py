@@ -4,16 +4,37 @@ from app.models import Product, Conversation, Customer, MessageSender, User
 from app.ai.provider import get_ai_response
 from app.ai.prompt_builder import build_system_prompt
 from app.ai import cache
+from app.ai.token_utils import truncate_history_to_token_limit
+
+SWAHILI_INDICATORS = {
+        # greetings
+        "habari", "mambo", "salama", "hujambo", "hamjambo",
+        # commerce
+        "ninataka", "nataka", "nunua", "kununua", "bei", "gharama",
+        "lipa", "malipo", "mpesa", "order", "niorder", "bidhaa",
+        "inapatikana", "stock", "tuma", "delivery", "ongea",
+        # confirmations
+        "ndiyo", "ndio", "hapana", "sawa", "sawa sawa", "asante",
+        "karibu", "tafadhali", "samahani", "pole", "ngoja",
+        # questions
+        "nini", "wapi", "lini", "vipi", "kwa nini", "ngapi",
+        # products / sizes
+        "saizi", "rangi", "nyekundu", "nyeupe", "nyeusi", "kubwa", "ndogo",
+        # pronouns / common words
+        "mimi", "wewe", "yeye", "sisi", "wao", "tuna", "nina",
+        "yake", "yangu", "yenu", "hii", "hiyo", "hizo",
+    }
+
 
 def get_business_prompt(user_id: int, db: Session) -> str:
     #Step 1 - check Redis first
     cached = cache.get_cached_business_prompt(user_id)
     if cached:
-        print(f"Cache HIT-business { user_id} prompt from redis")
+        print(f"[Cache HIT] Business { user_id} prompt from redis")
         return cached
     
     # Step 2 - cache miss, fetch from postgreSQL
-    print(f"Cache MISS- fetching business { user_id} from PostgreSQL")
+    print(f"[Cache MISS] Fetching business { user_id} from PostgreSQL")
     
     
     user = db.query(User).filter(User.id == user_id).first()
@@ -39,11 +60,13 @@ def get_business_prompt(user_id: int, db: Session) -> str:
 
     #Fetch knowledge base for the business
     knowledge_base =user.knowledge_base_text or ""
+    business_type = getattr(user, "business_type", "retail") or "retail"
 
     prompt = build_system_prompt(
         business_name=user.business_name,
         products=products_list,
-        knowledge_base=knowledge_base
+        knowledge_base=knowledge_base,
+        business_type = business_type,
     )
     
     cache.cache_business_prompt(user_id,prompt)
@@ -60,11 +83,11 @@ def get_conversation_history(
     # Step 1 — check Redis first
     cached = cache.get_cached_conversation(customer_id, user_id)
     if cached is not None:
-        print(f"Cache HIT — conversation from Redis")
+        print(f"[Cache HIT] Conversation from Redis")
         return cached
 
     # Step 2 — cache miss, fetch from PostgreSQL
-    print(f"Cache MISS — fetching conversation from PostgreSQL")
+    print(f"[Cache MISS] Fetching conversation from PostgreSQL")
     
 
     messages = (
@@ -87,6 +110,8 @@ def get_conversation_history(
                 "role": role,
                 "content": msg.message_text
         })
+    while history and history[0]["role"] != "user":
+        history.pop(0)
     #Step 3 - store in Redis for next time
     cache.cache_conversation(customer_id, user_id, history)
 
@@ -133,7 +158,7 @@ def get_or_create_customer(phone_number: str, db: Session) -> Customer:
         db.add(customer)
         db.commit()
         db.refresh(customer)
-        print(f"New customer registered: {phone_number}")
+        print(f"[AISHA] New customer registered: {phone_number}")
     else:
         customer.last_seen = func.now()
         db.commit()
@@ -144,6 +169,11 @@ def get_or_create_customer(phone_number: str, db: Session) -> Customer:
 def detect_handover(response: str) -> bool:
     return "[HANDOVER_REQUIRED]" in response
 
+def classify_handover_urgency(customer_message: str) -> str:
+    text_lower = customer_message.lower()
+    if any(keyword in text_lower for keyword in URGENT_KEYWORDS):
+        return "urgent"
+    return "normal"
 
 def clean_response(response: str) -> str:
     """
@@ -154,13 +184,12 @@ def clean_response(response: str) -> str:
 
 
 def detect_language(text: str) -> str:
-    #Simple language detection for database logging.The AI handles actual language matching in responses
-    swahili_words = [
-        "habari", "ninataka", "tuna", "bei", "nini",
-        "je", "sawa", "asante", "karibu", "ngoja"
-    ]
-    text_lower = text.lower()
-    if any(word in text_lower for word in swahili_words):
+    text_lower = text.lower(). strip()
+    words = set(text_lower.split())
+    
+    if words.intersection(SWAHILI_INDICATORS):
+        return "sw"
+    if any(indicator in text_lower for indicator in SWAHILI_INDICATORS):
         return "sw"
     return "en"
 
@@ -193,6 +222,8 @@ def process_customer_message(
 
     # 5. Fetch conversation history from database
     history = get_conversation_history(customer.id, user_id, db)
+    
+    history = truncate_history_to_token_limit(history, system_prompt)
 
     # 6. Ensure current message is at the end of history
     if not history or history[-1]["content"] != message_text:
@@ -200,15 +231,15 @@ def process_customer_message(
 
     # 7. Get AI response
     raw_response = get_ai_response(system_prompt, history)
+    
+    # 8. Parse language tag and clean response in one step
+    detected_language, clean = parse_ai_response(raw_response)
 
-    # 8. Check for handover trigger
-    needs_handover = detect_handover(raw_response)
+    # 9. Check for handover trigger
+    needs_handover = detect_handover(clean)
 
-    # 9. Clean internal tags from response
-    clean = clean_response(raw_response)
-
-    # 10. Detect response language for logging
-    response_language = detect_language(clean)
+    # 10. Clean internal tags from response
+    clean = clean_response(clean)
 
     # 11. Save AISHA's response
     save_message(
@@ -216,16 +247,88 @@ def process_customer_message(
         user_id=user_id,
         sender="assistant",
         message_text=clean,
-        language=response_language,
+        language=detected_language,
         db=db
     )
+    
+    if needs_handover:
+        notify_handover(customer.id, user_id, message_text, urgency, db)
 
     return {
         "response": clean,
         "needs_handover": needs_handover,
+        "handover_urgency": urgency,
         "customer_id": customer.id,
-        "language": language
+        "language": language,
+        "response_language": detected_language
     }
+    
+def notify_handover(
+    customer_id: int,
+    user_id: int,
+    customer_message: str,
+    urgency: str,
+    db: Session
+) -> None:
+    """
+    Alerts the business owner when AISHA triggers a handover.
+    Currently logs to console and saves a flag to the database.
+    Step 7 (webhook) will add WhatsApp notification delivery.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
+    phone = customer.phone_number if customer else "unknown"
+    business = user.business_name if user else f"business {user_id}"
+    owner_phone = getattr(user, "whatsapp_phone_number", None)
+
+    print(
+        f"\n[HANDOVER {urgency.upper()}]\n" 
+        f"Business: {business} \n "
+        f"Customer: {phone} \n"
+        f"Message: {customer_message[:120]} \n"
+        f"Owner: {owner_phone or 'not configured'}\n"
+    )
+    
+    
+    
+def parse_ai_response(raw_response:str) -> tuple:
+    """
+    Parses the AI's self-tagged response into language and clean text.Parses the AI's self-tagged response into language and clean text.
+    """
+    if not raw_response:
+        return "en", ""
+    
+    lines = raw_response.strip().split("\n", 1)
+    first_line = lines[0].strip()
+    
+    #Happy path -AI included the language tag correctly
+    if first_line == "[LANG:en]":
+        clean = lines[1].strip() if len(lines) > 1 else ""
+        return "en", clean
+    
+    if first_line == "[LANG:sw]":
+        clean = lines[1].strip() if len(lines) > 1 else ""
+        return "sw", clean
+    
+     # Fallback — AI forgot the tag (happens occasionally)
+    # Use simple word check rather than a library
+    print("AISHA WARNING] AI response missing language tag — using word fallback")
+    language = detect_language(raw_response)
+    return language, raw_response.strip()
+
+# Handover
+URGENT_KEYWORDS = {
+    #English
+    "complaint", "refund", "scam", "fraud", "angry", "terrible",
+    "wrong","broken", "missing" , "stolen" , "cheat" , "lied",
+    #Kiswahili
+    "malalamiko", "rudisha pesa", "uongo", "hasira", "mbaya sana",
+    "ilinibidi", "nilidanganywa", "tatizo kubwa",
+}
+    
+
+    
     
 
 

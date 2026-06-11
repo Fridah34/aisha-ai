@@ -67,40 +67,65 @@ try:
     print("\nTEST 1: English customer (first message)")
     result1 = process_customer_message(
         phone_number="+254712345678",
-        message_text="Hi, what shoes do you have?",
+        message_text="Good morning. I am looking for Nike sneakers. What sizes and colors do you have available?",
         user_id=test_user.id,
         db=db
     )
-    print("Customer: Hi, what shoes do you have?")
+    print("Customer: Good morning. I am looking for Nike sneakers. What sizes and colors do you have available?")
     print("AISHA:", result1["response"])
-    print("Language detected:", result1["language"])
-    print("Needs handover:", result1["needs_handover"])
+    print("Response language:", result1["response_language"])
 
-    # Test 2 — Same customer, Kiswahili, second message
-    print("\nTEST 2: Same customer continues in Kiswahili")
+    # Test 2 — Pure Kiswahili customer
+    print("\nTEST 2: Kiswahili customer")
     result2 = process_customer_message(
-        phone_number="+254712345678",
-        message_text="Ninataka kuorder Nike nyekundu size 8",
+        phone_number="+254722222222",
+        message_text="Habari, ninataka kujua bei za sneakers zenu zote",
         user_id=test_user.id,
         db=db
     )
-    print("Customer: Ninataka kuorder Nike nyekundu size 8")
+    print("Customer: Habari, ninataka kujua bei za sneakers zenu zote")
     print("AISHA:", result2["response"])
+    print("Response language:", result2["response_language"])
 
-    # Test 3 — New customer, question AISHA can't answer
-    print("\nTEST 3: Question requiring handover")
+    # Test 3 — Mixed language (Sheng)
+    print("\nTEST 3: Mixed language customer")
     result3 = process_customer_message(
-        phone_number="+254798765432",
-        message_text="Can I get a bulk discount for 50 pairs?",
+        phone_number="+254733333333",
+        message_text="Ninataka red Nike size 8, bei yake ni how much?",
         user_id=test_user.id,
         db=db
     )
-    print("Customer: Can I get a bulk discount for 50 pairs?")
+    print("Customer: Ninataka red Nike size 8, bei yake ni how much?")
     print("AISHA:", result3["response"])
-    print("Needs handover:", result3["needs_handover"])
+    print("Response language:", result3["response_language"])
+
+    # Test 4 — English order flow
+    print("\nTEST 4: English customer placing order")
+    result4 = process_customer_message(
+        phone_number="+254712345678",
+        message_text="I would like to order the Nike Air Force 1 in size 9 please",
+        user_id=test_user.id,
+        db=db
+)
+    print("Customer: I would like to order the Nike Air Force 1 in size 9 please")
+    print("AISHA:", result4["response"])
+    print("Response language:", result4["response_language"])
+
+    # Test 5 — English handover trigger
+    print("\nTEST 5: English handover")
+    result5 = process_customer_message(
+        phone_number="+254744444444",
+        message_text="Do you offer corporate bulk purchasing agreements?",
+        user_id=test_user.id,
+        db=db
+)
+    print("Customer: Do you offer corporate bulk purchasing agreements?")
+    print("AISHA:", result5["response"])
+    print("Needs handover:", result5["needs_handover"])
+    print("Response language:", result5["response_language"])
 
     print("\n" + "=" * 50)
-    print("Database test complete.")
+    print("All tests complete")
 
     # Show what got saved
     total_messages = db.query(models.Conversation).filter(
