@@ -44,7 +44,7 @@ def get_business_prompt(user_id: int, db: Session) -> str:
     products = (
         db.query(Product)
         .filter(Product.user_id ==user_id)
-        .filter(Product.is_available == True)
+        .filter(Product.is_available.is_(True))
         .all()
     )
 
@@ -83,11 +83,11 @@ def get_conversation_history(
     # Step 1 — check Redis first
     cached = cache.get_cached_conversation(customer_id, user_id)
     if cached is not None:
-        print(f"[Cache HIT] Conversation from Redis")
+        print("[Cache HIT] Conversation from Redis")
         return cached
 
     # Step 2 — cache miss, fetch from PostgreSQL
-    print(f"[Cache MISS] Fetching conversation from PostgreSQL")
+    print("[Cache MISS] Fetching conversation from PostgreSQL")
     
 
     messages = (

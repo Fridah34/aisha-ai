@@ -1,4 +1,3 @@
-from typing import List
 
 BUSINESS_FLOWS = {
     "retail": (

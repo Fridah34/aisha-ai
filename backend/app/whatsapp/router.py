@@ -8,11 +8,11 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-from app.database import get_db
-from app.models import User
-from app.ai.service import process_customer_message
-from app.whatsapp.client import send_text_message, send_owner_alert
-from app.whatsapp.parser import extract_message_data
+from app.database import get_db  # noqa: E402
+from app.models import User  # noqa: E402
+from app.ai.service import process_customer_message   # noqa: E402
+from app.whatsapp.client import send_text_message, send_owner_alert  # noqa: E402
+from app.whatsapp.parser import extract_message_data  # noqa: E402
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
@@ -90,7 +90,7 @@ async def verify_webhook(request: Request):
         print("[Webhook] Meta verification successful")
         return PlainTextResponse(content=challenge, status_code=200)
 
-    print(f"[Webhook] Verification failed — token mismatch")
+    print("[Webhook] Verification failed — token mismatch")
     raise HTTPException(status_code=403, detail="Webhook verification failed")
 
 
@@ -200,8 +200,8 @@ async def receive_message(request: Request, db: Session = Depends(get_db)):
             )
         else:
             print(
-                f"[Webhook] Handover triggered but owner has no "
-                f"whatsapp_phone_number set — cannot notify"
+                "[Webhook] Handover triggered but owner has no "
+                "whatsapp_phone_number set — cannot notify"
             )
 
     return {"status": "ok"}
