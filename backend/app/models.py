@@ -45,6 +45,9 @@ class User(Base):
     # More reliable than setting it in Python because it uses the
     # database server's clock, not your machine's clock
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    whatsapp_phone_number_id = Column(String(100), unique = True, nullable= True)
+    whatsapp_phone_number = Column(String(20), nullable=True)
 
     # Relationships tell SQLAlchemy how tables connect
     # When you access user.products, SQLAlchemy automatically

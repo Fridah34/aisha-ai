@@ -118,7 +118,7 @@ def cache_conversation(
     customer_id: int,
     user_id: int,
     history: list,
-    ttl_seconds: int = 7200
+    ttl_seconds: int = 86400
 ):
     """
     Stores conversation history in Redis for 2 hours.
@@ -138,7 +138,7 @@ def append_to_conversation_cache(
     customer_id: int,
     user_id: int,
     message: dict,
-    ttl_seconds: int = 7200
+    ttl_seconds: int = 86400
 ):
     """
     Adds one message to the cached conversation.

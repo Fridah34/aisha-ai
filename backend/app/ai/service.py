@@ -240,6 +240,9 @@ def process_customer_message(
 
     # 10. Clean internal tags from response
     clean = clean_response(clean)
+    
+    # 12. Classify handover urgency (used by dashboard prioritisation)
+    urgency = classify_handover_urgency(message_text) if needs_handover else None
 
     # 11. Save AISHA's response
     save_message(

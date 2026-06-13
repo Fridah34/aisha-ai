@@ -69,7 +69,7 @@ def build_system_prompt(
         "\n"
         "PRODUCTS AVAILABLE:\n"
         + products_text +
-        +"\n\n"
+        "\n\n"
         
         +action_flow
         + "\n\n"
