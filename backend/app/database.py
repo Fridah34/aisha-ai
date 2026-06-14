@@ -1,7 +1,6 @@
 from pathlib import Path
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 import os
 
@@ -36,10 +35,8 @@ def create_database_if_not_exists():
 
     default_engine.dispose()
 
-#Run the check every time the app starts
 create_database_if_not_exists()
 
-# Now create the real engine pointing to aisha_db
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

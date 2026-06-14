@@ -15,4 +15,12 @@ app.include_router(webhook_router)
 
 @app.get("/")
 def root():
-    return{ "message": "AISHA AI backend is running"}
+    return {"message": "AISHA AI backend is running"}
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
