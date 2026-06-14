@@ -5,7 +5,7 @@ import os
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")  
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def create_database_if_not_exists():
     default_url = DATABASE_URL.rsplit("/", 1)[0] + "/postgres"

@@ -1,19 +1,25 @@
-# Environment Variables (NEVER commit secrets!)
+# Environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-# Python & Virtual Environment
-.venv/
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
 venv/
 env/
-__pycache__/
-*.pyc
+ENV/
 
-# IDE & Editor
+# IDE
 .vscode/
 .idea/
 *.swp
-*.swo
-*~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log

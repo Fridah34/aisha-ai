@@ -1,5 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean,
+
     DateTime, ForeignKey, Numeric, Enum as EnumSQL
 )
 from sqlalchemy.orm import relationship
@@ -25,7 +26,6 @@ class MessageSender(enum.Enum):
 class SupportedLanguages(enum.Enum):
     en = "en"
     sw = "sw"
-
 
 class User(Base):
     __tablename__ = "users"
