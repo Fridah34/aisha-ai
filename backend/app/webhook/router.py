@@ -1,16 +1,16 @@
-import os
-from fastapi import APIRouter, Request, Depends, Form
+from dotenv import load_dotenv, find_dotenv
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from dotenv import load_dotenv, find_dotenv
+
 
 load_dotenv(find_dotenv())
 
-from app.database import get_db
-from app.models import User
-from app.ai.service import process_customer_message
-from app.webhook.client import send_text_message, send_owner_alert
-from app.webhook.parser import extract_message_data
+from app.database import get_db   # noqa: E402
+from app.models import User    # noqa: E402
+from app.ai.service import process_customer_message    # noqa: E402
+from app.webhook.client import send_text_message, send_owner_alert    # noqa: E402
+from app.webhook.parser import extract_message_data    # noqa: E402
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -62,10 +62,10 @@ async def receive_message(
         # Sandbox: one shared Twilio number, so we use the first active business.
         # Production: each business gets their own Twilio number.
         # When that happens, look up by data["twilio_number"] instead.
-        business = db.query(User).filter(User.is_active == True).first()
+        business = db.query(User).filter(User.is_active).first()
 
         if not business:
-            print(f"[Webhook] No active business found — cannot process message")
+            print("[Webhook] No active business found — cannot process message")
             return Response(status_code=200)
 
         # ── Process through AISHA's AI engine ────────────────────────
@@ -95,8 +95,8 @@ async def receive_message(
                 )
             else:
                 print(
-                    f"[Webhook] Handover triggered but owner has no "
-                    f"whatsapp_phone_number set — cannot notify"
+                    "[Webhook] Handover triggered but owner has no "
+                    "whatsapp_phone_number set — cannot notify"
                 )
 
         return Response(status_code=200)
