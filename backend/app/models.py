@@ -36,7 +36,7 @@ class User(Base):
     google_id = Column(String(255), unique=True, nullable=True)
     business_name = Column(String(150), nullable=False)
     is_active = Column(Boolean, default=True)
-    Knowledge_base_text = Column(Text, nullable=True)
+    knowledge_base_text = Column(Text, nullable=True)
     # server_default=func.now() means PostgreSQL sets this automatically
     # More reliable than setting it in Python because it uses the
     # database server's clock, not your machine's clock

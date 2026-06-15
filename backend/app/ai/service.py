@@ -275,23 +275,37 @@ def notify_handover(
 ) -> None:
     """
     Alerts the business owner when AISHA triggers a handover.
-    Currently logs to console and saves a flag to the database.
-    Step 7 (webhook) will add WhatsApp notification delivery.
+    Logs to console AND sends a WhatsApp alert to the owner's number.
     """
-    user = db.query(User).filter(User.id == user_id).first()
+    from app.whatsapp.client import send_owner_alert  # local import avoids circular
+
+    user     = db.query(User).filter(User.id == user_id).first()
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
 
-    phone = customer.phone_number if customer else "unknown"
-    business = user.business_name if user else f"business {user_id}"
+    phone    = customer.phone_number if customer else "unknown"
+    business = user.business_name   if user     else f"business {user_id}"
     owner_phone = getattr(user, "whatsapp_phone_number", None)
 
     print(
-        f"\n[HANDOVER {urgency.upper()}]\n" 
-        f"Business: {business} \n "
-        f"Customer: {phone} \n"
-        f"Message: {customer_message[:120]} \n"
-        f"Owner: {owner_phone or 'not configured'}\n"
+        f"\n[HANDOVER {urgency.upper()}]\n"
+        f"Business : {business}\n"
+        f"Customer : {phone}\n"
+        f"Message  : {customer_message[:120]}\n"
+        f"Owner    : {owner_phone or 'not configured'}\n"
     )
+
+    # Send WhatsApp alert if owner has a number configured
+    if owner_phone:
+        sent = send_owner_alert(
+            owner_phone=owner_phone,
+            customer_phone=phone,
+            customer_message=customer_message,
+            urgency=urgency,
+        )
+        if not sent:
+            print(f"[Handover] Failed to send WhatsApp alert to owner {owner_phone}")
+    else:
+        print("[Handover] Owner has no whatsapp_phone_number — alert skipped")
     
     
     

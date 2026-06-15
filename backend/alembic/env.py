@@ -11,11 +11,10 @@ load_dotenv()
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from app.database import Base #noqa: E402
-#from app import models
-#from app.models import User
+from app.models import Base #noqa: E402
 
 target_metadata = Base.metadata
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
