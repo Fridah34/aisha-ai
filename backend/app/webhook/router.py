@@ -84,21 +84,7 @@ async def receive_message(
 
         # ── Notify owner if handover triggered ───────────────────────
         if result["needs_handover"]:
-            owner_phone = getattr(business, "whatsapp_phone_number", None)
-
-            if owner_phone:
-                send_owner_alert(
-                    owner_phone=owner_phone,
-                    customer_phone=customer_phone,
-                    customer_message=message_text,
-                    urgency=result.get("handover_urgency", "normal"),
-                )
-            else:
-                print(
-                    "[Webhook] Handover triggered but owner has no "
-                    "whatsapp_phone_number set — cannot notify"
-                )
-
+            print(f"[Webhook] Handover flagged for customer{customer_phone}")
         return Response(status_code=200)
 
     except Exception as e:

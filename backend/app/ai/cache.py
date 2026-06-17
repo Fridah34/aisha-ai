@@ -82,7 +82,7 @@ def invalidate_conversation_cache(customer_id: int, user_id: int) -> None:
         return
     try:
         key = f"conv:{user_id}:{customer_id}"
-        redis_client.delte(key)
+        redis_client.delete(key)
         print(f"Conversation cache cleared: customer {customer_id} / business { user_id}")
     except Exception as e:
         print(f"Redis delete error: {e}")    

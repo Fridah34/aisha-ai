@@ -144,21 +144,35 @@ def save_message(
         user_id=user_id,
         message={"role": role, "content": message_text}
     )
+    
+def normalize_phone(phone_number:str) -> str:
+    phone = phone_number.strip()
+    if phone.startswith("whatsapp:"):
+        phone = phone[len("whatsapp:"):]
+    phone = phone.strip()
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    return phone
+
 
 def get_or_create_customer(phone_number: str, db: Session) -> Customer:
     #Finds a customer by phone number or creates them if first message.Phone number is the customer's only identity — no accounts needed.
+    #Normalizes the number before lookup to prevent duplicate records.
+    
+    phone = normalize_phone(phone_number)
+    
     customer = (
         db.query(Customer)
-        .filter(Customer.phone_number == phone_number)
+        .filter(Customer.phone_number == phone)
         .first()
     )
 
     if not customer:
-        customer = Customer(phone_number=phone_number)
+        customer = Customer(phone_number=phone)
         db.add(customer)
         db.commit()
         db.refresh(customer)
-        print(f"[AISHA] New customer registered: {phone_number}")
+        print(f"[AISHA] New customer registered: {phone}")
     else:
         customer.last_seen = func.now()
         db.commit()
@@ -277,7 +291,7 @@ def notify_handover(
     Alerts the business owner when AISHA triggers a handover.
     Logs to console AND sends a WhatsApp alert to the owner's number.
     """
-    from app.whatsapp.client import send_owner_alert  # local import avoids circular
+    from app.webhook.client import send_owner_alert  # local import avoids circular
 
     user     = db.query(User).filter(User.id == user_id).first()
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
