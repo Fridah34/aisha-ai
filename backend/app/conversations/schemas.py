@@ -12,6 +12,7 @@ class MessageResponse(BaseModel):
     message_text:str
     language:str
     timestamp: datetime
+    delivery_status: Optional[str] = None 
     
     class Config:
         from_attributes = True
@@ -38,4 +39,5 @@ class ConversationThread(BaseModel):
     customer_id: int
     customer_phone: str
     customer_name: Optional[str]
+    conversation_status: str
     messages: list[MessageResponse]

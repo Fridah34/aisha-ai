@@ -3,7 +3,7 @@ pure SQLAlchemy
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.models import Conversation, Customer
+from app.models import Conversation, Customer, ConversationState, HandoverStatus
 
 def get_inbox(db: Session, user_id: int) -> list[dict]:
     """
@@ -49,45 +49,47 @@ def get_inbox(db: Session, user_id: int) -> list[dict]:
         for conv, customer, last_time,total in rows
     ]
     
-def get_thread(
-    db: Session,
-    customer_id: int,
-    user_id: int,
-    limit: int = 50
-) -> dict | None:
-    """
-    Returns the full message thread for one customer.
-    """
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if not customer:
-        return None
-    
-    #Verify this customer has actually talked to this business
-    exists = (
-        db.query(Conversation)
-        .filter(
-            Conversation.customer_id == customer_id,
-            Conversation.user_id == user_id
-        )
+def get_thread(db: Session, customer_id: int, user_id: int):
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == customer_id)
         .first()
     )
-    if not exists:
+    if not customer:
         return None
-    
+
     messages = (
         db.query(Conversation)
         .filter(
             Conversation.customer_id == customer_id,
-            Conversation.user_id == user_id
+            Conversation.user_id == user_id,
         )
         .order_by(Conversation.timestamp.asc())
-        .limit(limit)
         .all()
     )
-    
+
+    # Pull real handover status from conversation_states table
+    state = (
+        db.query(ConversationState)
+        .filter_by(customer_id=customer_id, user_id=user_id)
+        .first()
+    )
+    conversation_status = state.status.value if state else HandoverStatus.ai_active.value
+
     return {
-        "customer_id": customer.id,
-        "customer_phone": customer.phone_number,
-        "customer_name": customer.name,
-        "messages": messages,
+        "customer_id":          customer.id,
+        "customer_phone":       customer.phone_number,
+        "customer_name":        customer.name,
+        "conversation_status":  conversation_status,
+        "messages": [
+            {
+                "id":           m.id,
+                "sender":       m.sender.value,
+                "message_text": m.message_text,
+                "language":     m.language.value,
+                "timestamp":    m.timestamp,
+                "delivery_status": m.delivery_status,
+            }
+            for m in messages
+        ],
     }

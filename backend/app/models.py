@@ -5,6 +5,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy import UniqueConstraint
 import enum
 from app.database import Base
 
@@ -38,6 +39,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     knowledge_base_text = Column(Text, nullable=True)
     business_type = Column(String(20), default="retail", nullable=True)
+    conversation_states = relationship("ConversationState", back_populates="business_owner")
     # server_default=func.now() means PostgreSQL sets this automatically
     # More reliable than setting it in Python because it uses the
     # database server's clock, not your machine's clock
@@ -84,6 +86,7 @@ class Customer(Base):
     last_seen = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     conversations = relationship("Conversation", back_populates="customer")
+    conversation_states = relationship("ConversationState", back_populates="customer")
     orders = relationship("Order", back_populates="customer")
 
 class Conversation(Base):
@@ -107,10 +110,34 @@ class Conversation(Base):
     message_text = Column(Text, nullable=False)
     language = Column(EnumSQL(SupportedLanguages),default=SupportedLanguages.en, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    delivery_status = Column(String(20), nullable=True)
 
     customer = relationship("Customer", back_populates="conversations")
     business_owner = relationship("User", back_populates="conversations")
 
+
+class HandoverStatus(enum.Enum):
+    ai_active = "ai_active"
+    needs_human = "needs_human"
+    human_active = "human_active"
+    resolved = "resolved"
+    
+class ConversationState(Base):
+    __tablename__ = "conversation_states"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "user_id", name="uq_customer_business"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer,ForeignKey("users.id", ondelete= "CASCADE"), nullable=False)
+    
+    status = Column(EnumSQL(HandoverStatus), default=HandoverStatus.ai_active, nullable=False)
+    taken_over_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    customer = relationship("Customer", back_populates="conversation_states")
+    business_owner = relationship("User", back_populates="conversation_states")
 class Order(Base):
     __tablename__ = "orders"
 

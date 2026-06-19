@@ -5,6 +5,7 @@ from app.ai.provider import get_ai_response
 from app.ai.prompt_builder import build_system_prompt
 from app.ai import cache
 from app.ai.token_utils import truncate_history_to_token_limit
+from app.models import ConversationState, HandoverStatus
 
 SWAHILI_INDICATORS = {
         # greetings
@@ -123,7 +124,8 @@ def save_message(
     sender: str,
     message_text: str,
     language: str,
-    db: Session
+    db: Session,
+    delivery_status: str | None = None 
 ) -> None:
      
     # saves tp PostgreSQL permanently and updates Redis simultaneously
@@ -132,7 +134,8 @@ def save_message(
         user_id=user_id,
         sender=MessageSender(sender),
         message_text=message_text,
-        language=language
+        language=language,
+        delivery_status=delivery_status,
     )
     db.add(new_message)
     db.commit()
@@ -155,7 +158,7 @@ def normalize_phone(phone_number:str) -> str:
     return phone
 
 
-def get_or_create_customer(phone_number: str, db: Session) -> Customer:
+def get_or_create_customer(phone_number: str, db: Session, profile_name:str | None =None) -> Customer:
     #Finds a customer by phone number or creates them if first message.Phone number is the customer's only identity — no accounts needed.
     #Normalizes the number before lookup to prevent duplicate records.
     
@@ -168,13 +171,15 @@ def get_or_create_customer(phone_number: str, db: Session) -> Customer:
     )
 
     if not customer:
-        customer = Customer(phone_number=phone)
+        customer = Customer(phone_number=phone, name=profile_name)
         db.add(customer)
         db.commit()
         db.refresh(customer)
-        print(f"[AISHA] New customer registered: {phone}")
+        print(f"[AISHA] New customer registered: {phone} ({profile_name or 'no name'})")
     else:
         customer.last_seen = func.now()
+        if profile_name and not customer.name:
+            customer.name = profile_name
         db.commit()
 
     return customer
@@ -212,11 +217,12 @@ def process_customer_message(
     phone_number: str,
     message_text: str,
     user_id: int,
-    db: Session
+    db: Session,
+    profile_name=None
 ) -> dict:
     #Main orchestrator — called by the WhatsApp webhook on every incoming customer message.
     # 1. Find or create customer
-    customer = get_or_create_customer(phone_number, db)
+    customer = get_or_create_customer(phone_number, db, profile_name)
 
     # 2. Detect language for logging
     language = detect_language(message_text)
@@ -230,6 +236,17 @@ def process_customer_message(
         language=language,
         db=db
     )
+    
+    state = get_or_create_conversation_state(customer.id, user_id, db)
+    
+    if state.status in (HandoverStatus.human_active, HandoverStatus.needs_human):
+        return {"response":None, "needs_handover": True, "ai_responded": False,
+                "customer_id": customer.id,"language":language}
+        
+    # A new message after the owner closed it out — AI resumes.
+    if state.status == HandoverStatus.resolved:
+        state.status = HandoverStatus.ai_active
+        db.commit()
 
     # 4. Build prompt from real database data
     system_prompt = get_business_prompt(user_id, db)
@@ -269,6 +286,8 @@ def process_customer_message(
     )
     
     if needs_handover:
+        state.status = HandoverStatus.needs_human
+        db.commit()
         notify_handover(customer.id, user_id, message_text, urgency, db)
 
     return {
@@ -277,7 +296,8 @@ def process_customer_message(
         "handover_urgency": urgency,
         "customer_id": customer.id,
         "language": language,
-        "response_language": detected_language
+        "response_language": detected_language,
+        "ai_responded" : True
     }
     
 def notify_handover(
@@ -321,6 +341,19 @@ def notify_handover(
     else:
         print("[Handover] Owner has no whatsapp_phone_number — alert skipped")
     
+    
+def get_or_create_conversation_state(customer_id: int, user_id: int, db: Session) -> ConversationState:
+    state = (
+        db.query(ConversationState)
+        .filter(ConversationState.customer_id == customer_id, ConversationState.user_id == user_id)
+        .first()
+    )
+    if not state:
+        state = ConversationState(customer_id=customer_id, user_id=user_id)
+        db.add(state)
+        db.commit()
+        db.refresh(state)
+    return state
     
     
 def parse_ai_response(raw_response:str) -> tuple:
