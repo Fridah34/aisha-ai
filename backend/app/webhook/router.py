@@ -9,7 +9,7 @@ load_dotenv(find_dotenv())
 from app.database import get_db   # noqa: E402
 from app.models import User    # noqa: E402
 from app.ai.service import process_customer_message    # noqa: E402
-from app.webhook.client import send_text_message, send_owner_alert    # noqa: E402
+from app.webhook.client import send_text_message     # noqa: E402
 from app.webhook.parser import extract_message_data    # noqa: E402
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
