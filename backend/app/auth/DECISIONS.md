@@ -109,3 +109,11 @@
 - FastAPI Docs: https://fastapi.tiangolo.com/
 - Python-jose (JWT library): https://python-jose.readthedocs.io/
 - Passlib (password hashing): https://passlib.readthedocs.io/
+
+- RFC 7231 - Official HTTP standard : https://tools.ietf.org/html/rfc7231
+
+- HTTP Methods - MDN documentation: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods
+- HTTP Status Codes - Complete reference
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+- REST API Design - Best practices: https://restfulapi.net/
+- FAST- FastAPI Docs - Your framewor:  https://fastapi.tiangolo.com/
