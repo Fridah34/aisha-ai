@@ -1,5 +1,4 @@
 import sys
-from decimal import Decimal
 from sqlalchemy.orm import Session
 from app.database import engine, Base, SessionLocal
 import app.models as models
