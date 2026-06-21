@@ -55,4 +55,24 @@ def verify_access_token(token: str) -> Optional[Dict]:
     
 #=========TOKEN REFRESH FUNCTIONS========
 
-def refresh_access_token(token: 
+def refresh_access_token(data: Dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    to_encode.update({"exp": expire, "type": "refresh"})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+#=========PASSWORD VALIDATION=============
+
+def is_password_strong(password: str)-> bool:
+    if len(password) < 8:
+        return False
+    if not any(c.isupper() for c in password):  # c stands for character
+        return False
+    if not any(c.islower() for c in password):
+        return False
+    if not any(c.isdigit() for c in password):
+        return False
+    if not any(c in "!@#$%^&*()-_=+[]{}|;:'\",.<>?/`~" for c in password):
+        return False
+    return True
