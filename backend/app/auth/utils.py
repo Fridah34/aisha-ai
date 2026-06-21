@@ -1,0 +1,58 @@
+#=================================================================================================
+#UTILITY OPERATIOINS: Security, cryptography and Token management
+#=================================================================================================
+
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict
+import jwt
+import os
+from passlib.context import CryptContext
+
+#==========PASSWORD HASHING CONTEXT===========
+
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt_rounds=12,
+)
+
+#==========JWT CONFIGURATION==============
+
+SECRET_KEY = os.getenv("SECRET_KEY","change-me-in-production-super-secret-key")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+#=========PASSWORD HASHING FUNCTIONS=======
+
+def hash_password(password:str) -> str:
+    return pwd_context.hash(password)
+def verify_password(plain_password: str,hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password,hashed_password)
+
+#==========JWT TOKEN FUNCTIONS=========
+
+def create_access_token(
+        data: Dict,
+        expires_delta: Optional[timedelta] = None
+)-> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def verify_access_token(token: str) -> Optional[Dict]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+    
+#=========TOKEN REFRESH FUNCTIONS========
+
+def refresh_access_token(token: 
