@@ -11,8 +11,16 @@ from app.database import get_db
 from app.products import crud
 from app.products.schemas import ProductCreate, ProductUpdate, ProductResponse
 from app.ai.cache import invalidate_business_cache
+from app.models import Product 
+
+import uuid
+import os
+from fastapi import UploadFile, File
 
 router = APIRouter(prefix="/products", tags=["Products"])
+
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_SIZE_BYTES = 2 * 1024 * 1024
 
 @router.get("", response_model=list[ProductResponse])
 def list_products(user_id: int, db: Session = Depends(get_db)):
@@ -75,3 +83,55 @@ def remove_product(product_id: int, user_id: int, db: Session = Depends(get_db))
     crud.delete_product(db, product)
     invalidate_business_cache(user_id)
     return None
+
+@router.post("/{product_id}/image")
+async def upload_product_image(
+    product_id : int,
+    user_id : int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    #validate type
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(400, "Only JPEG, PNG, and WebP images are allowed")
+    
+    #Read and validate size
+    contents = await file.read()
+    if len(contents) > MAX_SIZE_BYTES:
+        raise HTTPException(400, "Image must be under 2MB")
+    
+    #Optional - resize /compress with pillow if installed
+    try: 
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(contents))
+        img.thumbnail((800, 800))
+        buf = io.BytesIO()
+        fmt = "JPEG" if file.content_type == "image/jpeg" else "PNG"
+        img.save(buf, format=fmt, optimize= True, quality=85)
+        contents = buf.getvalue()
+    except ImportError:
+        pass
+    
+    #save to disk
+    ext = file.filename.rsplit(".", 1)[-1].lower()
+    filename = f"{product_id}_ {uuid.uuid4().hex[:8]}.{ext}"
+    folder = f"uploads/products/{user_id}"
+    os.makedirs(folder, exist_ok=True)
+    filepath = f"{folder}/{filename}"
+    
+    with open(filepath, "wb") as f:
+        f.write(contents)
+        
+    #Save URL to DB
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.user_id == user_id
+    ).first()
+    if not product:
+        raise HTTPException(404, "Product not found")
+    
+    product.image_url = f"/{filepath}"
+    db.commit()
+    
+    return {"image_url": f"/{filepath}"}

@@ -66,6 +66,13 @@ class Product(Base):
     description = Column(Text, nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
     is_available = Column(Boolean, default=True)
+    category = Column(String(100), nullable=True)
+    variant_label = Column(String(50), nullable=True)
+    variant_options = Column(String(300), nullable=True)
+    unit = Column(String(50), nullable=True)
+    image_url = Column(String(500), nullable=True)
+    upsell_text = Column(Text, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),server_default=func.now(), onupdate=func.now())
 

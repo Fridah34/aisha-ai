@@ -24,6 +24,27 @@ BUSINESS_FLOWS = {
     ),
 }
 
+def format_product_line(p: dict) -> str:
+    "formats one product into a structured line for the AI system prompt."
+    "Uses all the available fields so AISHA can answer size/color/duration questions instead of guessing form free text descriptions."
+    line = f"- {p['name']}: Ksh {p['price']}"
+    
+    if p.get("unit"):
+        line += f" per {p['unit']})"
+        
+    if p.get("category"):
+        line += f" (Category: {p['category']})"
+        
+    if p.get("variant_label") and p.get("variant_options"):
+        line += f" - {p['variant_label']} : {p['variant_options']})"
+        
+    if p.get("description"):
+        line += f". {p['description']})"
+    if p.get("upsell_text"):
+        line += f" SUGGEST ALONGSIDE: {p['upsell_text']}"
+        
+    return line
+
 def build_system_prompt(
     business_name: str,
     products: list,
@@ -33,13 +54,7 @@ def build_system_prompt(
 
     # Format products into readable text
     if products:
-        product_lines = []
-        for p in products:
-            availability = "In stock" if p["is_available"] else "Out of stock"
-            description = f" - {p['description']}" if p.get("description") else ""
-            line = f"- {p['name']}: KSh {p['price']} ({availability}){description}"
-            product_lines.append(line)
-        products_text = "\n".join(product_lines)
+        products_text = "\n".join(format_product_line(p) for p in products)
     else:
         products_text = "No products listed yet."
 
