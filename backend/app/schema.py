@@ -303,7 +303,7 @@ class OrderResponse(BaseModel):
                 "status": "pending",
                 "created_at": "2026-06-11T14:00:00",
                 "updated_at": "2026-06-11T14:00:00",
-                "snapshot_customer_name": "",
+                "snapshot_customer_name": "John Doe",
                 "snapshot_customer_phone": "+1234567890",
                 "snapshot_product_name": "Product 1",
                 "snapshot_product_price": 19.99,

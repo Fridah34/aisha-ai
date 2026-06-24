@@ -54,7 +54,7 @@ async def get_current_user(
 async def get_optional_current_user(
     credentials:HTTPAuthCredentials = Depends(Security),
     db:Session = Depends(get_db),
-) -> Optional[User]:
+)-> Optional[User]:
     if credentials is None:
         return None
     

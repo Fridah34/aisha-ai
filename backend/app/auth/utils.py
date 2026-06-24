@@ -26,6 +26,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 def hash_password(password:str) -> str:
     return pwd_context.hash(password)
+
 def verify_password(plain_password: str,hashed_password: str) -> bool:
     return pwd_context.verify(plain_password,hashed_password)
 
@@ -58,7 +59,7 @@ def verify_access_token(token: str) -> Optional[Dict]:
 def refresh_access_token(data: Dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=7)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({"exp": int(expire.timestamp()), "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
