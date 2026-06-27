@@ -2,18 +2,25 @@
 #UTILITY OPERATIOINS: Security, cryptography and Token management
 #=================================================================================================
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
-import jwt
 import os
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional
+
+import jwt
 from passlib.context import CryptContext
 
 #==========PASSWORD HASHING CONTEXT===========
 
+# ==============================================================================
+# NOTE: Passlib uses a double underscore ('__') to target scheme-specific parameters.
+# 'bcrypt__min_rounds' forces a cryptographically secure baseline hashing difficulty 
+# factor of 12. Do not change to a single underscore, or it will trigger a KeyError.
+# ==============================================================================
+
 pwd_context = CryptContext(
     schemes=["bcrypt"],
     deprecated="auto",
-    bcrypt_rounds=12,
+    bcrypt__min_rounds=12,
 )
 
 #==========JWT CONFIGURATION==============
@@ -41,7 +48,7 @@ def create_access_token(
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": int(expire.timestamp())})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
