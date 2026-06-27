@@ -13,6 +13,7 @@ from app.auth.utils import (
     verify_password,
 )
 from app.crud import get_user_by_email
+from app.database import get_db
 from app.models import User
 from app.schema import (
     TokenResponse,
@@ -21,7 +22,6 @@ from app.schema import (
     UserRegister,
     UserResponse,
 )
-from database import get_db
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -49,7 +49,7 @@ router = APIRouter(
 )
 def register(
     user_data:UserRegister,
-    db:Session = Depends(get_db)
+    db:Session = Depends(get_db) 
 ):
     # check if email already exist
     existing_user = get_user_by_email(db,user_data.email)
@@ -165,7 +165,7 @@ def login(
   return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user":user,
+        "user": UserResponse.model_validate(user)
 }
 
 #=============GET ME ENDPOINT====================
@@ -193,8 +193,7 @@ def logout(
 ):
     return{
         "message":f"Goodbye {current_user.name}, you have been logged out successfully.",
-        "user_id": current_user.id,
-
+        "user": UserResponse.model_validate(current_user)
     }
 
 #==========VERIFY TOKEN ENDPOINT====================
@@ -209,6 +208,6 @@ def verify_token(
 ):
     return{
         "is_valid": True,
-        "user":current_user,
+        "user": UserResponse.model_validate(current_user),
         "message":"Token is valid",
     }

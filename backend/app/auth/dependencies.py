@@ -2,13 +2,14 @@
 #DEPENDENCIES OPERATIONS:Route protection, Database  Hooks & Authentication Guard
 #================================================================================================
 
-from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
-from sqlalchemy.orm import Session
-from app.models import User
-from app.auth.utils import verify_token
-from database import get_db
 from typing import Optional
+
+from app.auth.utils import verify_access_token
+from app.database import get_db
+from app.models import User
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
 #===========HTTP BEARER SCHEME================
 
@@ -19,11 +20,11 @@ security = HTTPBearer(
 #===========AUTHENTICATION DEPENDENCY================
 
 async def get_current_user(
-    credentials:HTTPAuthCredentials = Depends(Security),
+    credentials:HTTPAuthorizationCredentials = Depends(security),
     db:Session = Depends(get_db),   
 )-> User:
     token =credentials.credentials
-    token_data = verify_token(token)
+    token_data = verify_access_token(token)
     if token_data is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -52,14 +53,14 @@ async def get_current_user(
 #===========OPTIONAL AUTHENTICATION DEPENDENCY================
 
 async def get_optional_current_user(
-    credentials:HTTPAuthCredentials = Depends(Security),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db:Session = Depends(get_db),
-)-> Optional[User]:
+)->Optional[User]:
     if credentials is None:
         return None
     
     token = credentials.credentials
-    token_data = verify_token(token)
+    token_data = verify_access_token(token)
     if token_data is None:
         return None
 

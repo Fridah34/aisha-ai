@@ -1,13 +1,20 @@
-from sqlalchemy import (
-    Column, Integer, String, Text, Boolean,
+import enum
 
-    DateTime, ForeignKey, Numeric, Enum as EnumSQL
+from app.database import Base
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
 )
+from sqlalchemy import Enum as EnumSQL
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy import UniqueConstraint
-import enum
-from app.database import Base
 
 
 class OrderStatus(enum.Enum):
@@ -70,7 +77,7 @@ class Product(Base):
     updated_at = Column(DateTime(timezone=True),server_default=func.now(), onupdate=func.now())
 
     owner = relationship("User", back_populates="products")
-    order_items = relationship("Order", back_populates="product")
+    order_items = relationship("Order", back_populates="products")
 
 class Customer(Base):
     __tablename__ = "customers"
@@ -172,6 +179,7 @@ class Order(Base):
     snapshot_product_name = Column(String, nullable=True)
     snapshot_product_price = Column(Numeric(10, 2), nullable=True)
     snapshot_business_name = Column(String, nullable=True)
+
 
     customer = relationship("Customer", back_populates="orders")
     product = relationship("Product", back_populates="order_items")
