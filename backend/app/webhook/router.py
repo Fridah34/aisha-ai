@@ -12,7 +12,7 @@ from app.models import User , Product   # noqa: E402
 from app.ai.service import process_customer_message    # noqa: E402
 from app.webhook.client import send_text_message     # noqa: E402
 from app.webhook.parser import extract_message_data    # noqa: E402
-from app.ai.cache import already_sent_image, mark_image_sent
+from app.ai.cache import already_sent_image, mark_image_sent # noqa : E402
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -123,7 +123,7 @@ async def receive_message(
         )
         
         if not result.get("response"):
-            print(f"[Webhook] AISHA returned no response")
+            print("[Webhook] AISHA returned no response")
             print(f"[Webhook] Full result: {result}")
             return Response(status_code=200)
         
