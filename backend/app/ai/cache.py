@@ -133,6 +133,33 @@ def cache_conversation(
     except Exception as e:
         print(f"Redis conversation write error: {e}")
 
+def already_sent_image(customer_id: int, user_id: int, product_id: int) -> bool:
+    if not REDIS_AVAILABLE:
+        return False
+    try:
+        key = f"img_sent:{user_id}:{customer_id}:{product_id}"
+        exists = redis_client.exists(key)
+
+        print(f"[Redis] Checking image key: {key} -> {'already sent' if exists else 'not sent'}")
+
+        return bool(exists)
+
+    except Exception as e:
+        print(f"[Redis] Image check error: {e}")
+        return False
+
+
+def mark_image_sent(customer_id: int, user_id: int, product_id: int) -> None:
+    if not REDIS_AVAILABLE:
+        return
+    try:
+        key = f"img_sent:{user_id}:{customer_id}:{product_id}"
+        redis_client.setex(key, 7200, "1")
+
+        print(f"[Redis] Image marked as sent: {key}")
+
+    except Exception as e:
+        print(f"[Redis] Image mark error: {e}")
 
 def append_to_conversation_cache(
     customer_id: int,

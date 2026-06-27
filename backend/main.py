@@ -7,6 +7,8 @@ from app.products.router import router as products_router
 from app.conversations.router import router as conversations_router
 from app.settings.router import router as settings_router
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 
 Base.metadata.create_all(bind=engine)
 
@@ -23,6 +25,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("uploads/products", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(webhook_router)
 #app.include_router(knowledge_base_router)

@@ -1,68 +1,54 @@
-import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import Sidebar from './components/Sidebar'
-import TopBar from './components/TopBar'
-import Overview from './pages/Overview'
+import Sidebar    from './components/Sidebar'
+import TopBar     from './components/TopBar'
+import BottomNav  from './components/BottomNav'
+import Overview      from './pages/Overview'
 import Conversations from './pages/Conversations'
-import Products from './pages/Products'
-import Settings from './pages/Settings'
+import Products      from './pages/Products'
+import Settings      from './pages/Settings'
 
+/**
+ * Layout:
+ *   Desktop (md+) → left sidebar always expanded + topbar + page content
+ *   Mobile  (<md) → topbar + page content + bottom nav bar
+ *
+ * No collapsed/hamburger state needed — the two layouts are fully separate.
+ * Sidebar never appears on mobile; BottomNav never appears on desktop.
+ */
 export default function App() {
-  const [collapsed, setCollapsed ] = useState(false)
-  const [mobileOpen, setMobileOpen ] = useState(false)
-
-  //Auto-collapse sidebar on small Screens
-  useEffect(() => {
-    function handleResize() {
-      if (window.innerWidth < 768) {
-        setCollapsed(true)
-        setMobileOpen(false)
-      } else {
-        setMobileOpen(false)
-      }
-    }
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
   return (
     <BrowserRouter>
+      {/* Outer shell — full viewport, no scroll */}
       <div className="flex h-screen bg-slate-50 overflow-hidden">
 
-        {/* Mobile overlay backdrop */}
-        {mobileOpen && (
-          <div
-          className="fixed inset-0 bg-black/50 z-20 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          />
-        )}
-        {/* sidebar -on mobile it slides in over content*/}
-        <div className={`fixed md:relative inset-y-0 left-0 z-30 h-screen transition-transform duration-300 ease-in-out
-        ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
-        md:translate-x-0 md:flex md:shrink-0
-        `}>
+        {/* ── Desktop sidebar — hidden below md ── */}
+        <div className="hidden md:flex md:shrink-0">
+          <Sidebar />
+        </div>
 
-        <Sidebar
-           collapsed= {collapsed} 
-           onToggle={() => setCollapsed(prev => !prev)}
-           onNavClick={() => setMobileOpen(false)}
-          
-          />
-          </div>
-        {/* Right side: topbar + page content*/}
+        {/* ── Right side: topbar + scrollable content + mobile bottom nav ── */}
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <TopBar onHamburger={() => setMobileOpen(prev => !prev)}
-           />
-          <main className="flex-1 overflow-y-auto">
+
+          <TopBar />
+
+          {/* Page content — scrolls independently */}
+          <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
+            {/*
+              pb-16 on mobile adds bottom padding so content is never
+              hidden behind the fixed bottom nav bar (h-16 = 64px).
+              md:pb-0 removes it on desktop where there is no bottom nav.
+            */}
             <Routes>
-              <Route path="/" element={<Navigate to="/overview" replace />} />
-              <Route path="/overview" element={<Overview />} />
+              <Route path="/"              element={<Navigate to="/overview" replace />} />
+              <Route path="/overview"      element={<Overview />} />
               <Route path="/conversations" element={<Conversations />} />
-              <Route path="/products" element={<Products />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/products"      element={<Products />} />
+              <Route path="/settings"      element={<Settings />} />
             </Routes>
           </main>
+
+          {/* ── Mobile bottom nav — hidden on md+ ── */}
+          <BottomNav />
         </div>
 
       </div>
