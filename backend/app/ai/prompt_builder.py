@@ -6,7 +6,8 @@ BUSINESS_FLOWS = {
         "2. Ask for their name if unknown\n"
         "3. State the total amount\n"
         "4. Direct them to pay via M-Pesa to the business number if provided\n"
-        "5. Confirm order is placed and they will be contacted\n"
+        "5. Confirm order is placed and they will be contacted for delivery\n"
+        "6. If the customer says yes, confirms, or agrees to proceed-Complete the order flow above.DO NOT hand over. \n"
     ),
     "services": (
         "HOW TO HANDLE BOOKINGS:\n"
@@ -15,6 +16,7 @@ BUSINESS_FLOWS = {
         "3. Ask for their name and phone number\n"
         "4. Confirm the appointment and tell them they will receive a reminder\n"
         "5. State the price if asked\n"
+        "6. If the customer confirms or agrees - complete the booking flow above. Do NOT hand over. \n"
     ),
     "general": (
         "HOW TO HANDLE INQUIRIES:\n"
@@ -30,13 +32,15 @@ def format_product_line(p: dict) -> str:
     line = f"- {p['name']}: Ksh {p['price']}"
     
     if p.get("unit"):
-        line += f" per {p['unit']})"
+        line += f" / {p['unit']}"
         
     if p.get("category"):
         line += f" (Category: {p['category']})"
         
     if p.get("variant_label") and p.get("variant_options"):
-        line += f" - {p['variant_label']} : {p['variant_options']})"
+        line += f" - {p['variant_label']} : {p['variant_options']}"
+    elif p.get("variant_label"):
+        line += f" - {p['variant_label']}"
         
     if p.get("description"):
         line += f". {p['description']})"
@@ -111,14 +115,14 @@ def build_system_prompt(
         "Then your actual response on the next line.\n"
         "\n"
         
-        "HOW TO HANDLE ORDERS:\n"
-        "When a customer wants to buy something, guide them step by step:\n"
-        "1. Confirm exactly which product and quantity they want\n"
-        "2. Ask for their name if you do not already know it\n"
-        "3. Give them the total amount\n"
-        "4. Tell them to pay via M-Pesa to the business number if provided\n"
-        "5. Confirm the order is placed and they will be contacted\n"
-        "\n"
+        #"HOW TO HANDLE ORDERS:\n"
+        #"When a customer wants to buy something, guide them step by step:\n"
+        #"1. Confirm exactly which product and quantity they want\n"
+        #"2. Ask for their name if you do not already know it\n"
+        #"3. Give them the total amount\n"
+        #"4. Tell them to pay via M-Pesa to the business number if provided\n"
+        #"5. Confirm the order is placed and they will be contacted\n"
+        #"\n"
         
         "HANDLING LONG INQUIRIES:\n"
         "If a customer asks multiple questions at once:\n"
@@ -138,6 +142,14 @@ def build_system_prompt(
         "- You are unsure how to answer correctly\n"
         "- Customer wants to negotiate any price\n"
         "\n"
+        "DO NOT trigger handover for:\n"
+        "- Order confirmations ('yes', 'proceed', 'I want to buy', 'okay', 'confirm')\n"
+        "- Customers giving their name or payment confirmation\n"
+        "- Directing a customer to pay via M-Pesa\n"          # ← add this
+        "- Confirming an order has been placed\n" 
+        "- Questions about products that are in your list\n"
+        "- General greetings or follow-up questions about an ongoing order\n"
+        "\n"
         "When ANY of these happen, do this exactly:\n"
         "1. Write a short, polite response telling them you're connecting them with the team\n"
         "   In Kiswahili: Ngoja nikuunganishe na timu yetu.\n"
@@ -148,6 +160,18 @@ def build_system_prompt(
         "[LANG:en]\n"
         "Let me connect you with our team for that.\n"
         "[HANDOVER_REQUIRED]\n"
+        "\n"
+        "Example of a correct order completion — NO handover tag:\n"
+        "[LANG:en]\n"
+        "Thank you, Jane! Your total for 2 pairs is Ksh 6000. "
+        "Please pay via M-Pesa to our business number. "
+        "We will contact you once payment is confirmed.\n"
+        "(No [HANDOVER_REQUIRED] tag — AISHA handled this completely)\n"
+        "\n"
+        "CRITICAL: Completing an order, confirming payment instructions, or collecting a "
+        "customer's name are NOT handover triggers. Do not append [HANDOVER_REQUIRED] "
+        "after payment instructions or order confirmations. Only append it for complaints, "
+        "discounts, negotiations, or when you genuinely cannot help.\n"
         "\n"
         "Do NOT try to answer bulk discount, complaint, or negotiation questions yourself —\n"
         "always hand those over, even if you think you know the answer.\n"

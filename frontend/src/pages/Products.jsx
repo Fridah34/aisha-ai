@@ -625,10 +625,24 @@ function ProductForm({
               "{config.questionHint}?" — instead of guessing from free text.
             </p>
 
+          {/* Worked example so owner knows exactly what to put */}
+          <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-xl
+                           bg-blue-50 border border-blue-100">
+            <span className="text-blue-500 text-xs shrink-0 mt-0.5">e.g.</span>
+            <div className="text-xs text-blue-700 leading-relaxed">
+              {businessType === 'services'
+                ? <><strong>Type label:</strong> Duration &nbsp;→&nbsp; <strong>Options:</strong> 30min, 60min, 90min</>
+                : <><strong>Type label:</strong> Size &nbsp;→&nbsp; <strong>Options:</strong> S, M, L, XL<br />
+                    <strong>Type label:</strong> Color &nbsp;→&nbsp; <strong>Options:</strong> Red, Blue, Black</>
+              }
+            </div>
+          </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                  Label
+                  Type Label
+                  <span className="text-slate-400 font-normal ml-1">(e.g. Size , Color) </span>
                 </label>
                 <input
                   type="text"
@@ -644,6 +658,7 @@ function ProductForm({
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1.5">
                   Options
+                  <span className="text-slate-400 font-normal ml-1">(comma-separated)</span>
                 </label>
                 <input
                   type="text"

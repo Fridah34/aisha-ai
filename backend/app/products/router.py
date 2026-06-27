@@ -115,7 +115,7 @@ async def upload_product_image(
     
     #save to disk
     ext = file.filename.rsplit(".", 1)[-1].lower()
-    filename = f"{product_id}_ {uuid.uuid4().hex[:8]}.{ext}"
+    filename = f"{product_id}_{uuid.uuid4().hex[:8]}.{ext}"
     folder = f"uploads/products/{user_id}"
     os.makedirs(folder, exist_ok=True)
     filepath = f"{folder}/{filename}"
