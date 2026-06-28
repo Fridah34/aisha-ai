@@ -84,8 +84,7 @@ class Product(Base):
     updated_at = Column(DateTime(timezone=True),server_default=func.now(), onupdate=func.now())
 
     owner = relationship("User", back_populates="products")
-    order_items = relationship("Order", back_populates="products")
-
+    order_items = relationship("Order", back_populates="product")  # <-- MUST BE SINGULAR
 class Customer(Base):
     __tablename__ = "customers"
 

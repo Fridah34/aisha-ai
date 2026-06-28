@@ -3,7 +3,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class OrderStatus(str, Enum):
@@ -28,7 +28,15 @@ class UserRegister(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="Full name")
     email: EmailStr = Field(description="Unique email address")
     password: str = Field(min_length=8, max_length=100, description="Password with a minimum of 8 characters")
+    confirm_password: str = Field(..., min_length=8, max_length=100, description="Password confirmation")
     business_name: str = Field(min_length=1, max_length=150, description="Business name")
+
+    #  This checks that both fields match automatically!
+    @model_validator(mode="after")
+    def verify_passwords_match(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
 
     model_config = {
         "json_schema_extra": {
@@ -36,6 +44,7 @@ class UserRegister(BaseModel):
                 "name": "Eve Mipata",
                 "email": "eve.mipata@example.com",
                 "password": "securepassword",
+                "confirm_password": "securepassword",
                 "business_name": "Eve's Business"
             }
         }

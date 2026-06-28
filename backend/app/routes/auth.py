@@ -116,8 +116,12 @@ def register_google(
         db.refresh(new_user)
 
         return new_user
-    except Exception:
+    except Exception as e:
         db.rollback() #undo any changes made during the creation process
+        print("\n ACTUAL REGISTRATION ERROR:", str(e))
+        import traceback
+        traceback.print_exc()
+        print("=========================================\n")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create account .Please try again",
