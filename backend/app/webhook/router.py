@@ -2,15 +2,17 @@ from dotenv import load_dotenv, find_dotenv
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-
+import os
+from urllib.parse import quote
 
 load_dotenv(find_dotenv())
 
 from app.database import get_db   # noqa: E402
-from app.models import User    # noqa: E402
+from app.models import User , Product   # noqa: E402
 from app.ai.service import process_customer_message    # noqa: E402
 from app.webhook.client import send_text_message     # noqa: E402
 from app.webhook.parser import extract_message_data    # noqa: E402
+from app.ai.cache import already_sent_image, mark_image_sent # noqa : E402
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -19,6 +21,48 @@ UNSUPPORTED_MESSAGE = (
     "Samahani, ninaweza kusoma maandishi tu kwa sasa. Tafadhali andika swali lako."
 )
 
+def find_product_image(response_text:str, user_id: int, db:Session) -> tuple[str | None, int | None]: 
+    if not response_text:
+        return None, None
+    
+    base_url = os.getenv("BASE_URL", "").rstrip("/")
+    if not base_url:
+        print("[Webhook] BASE_URL is missing")
+        return None, None
+    
+    #Fetch only products that have an image stored
+    products_with_images= (
+        db.query(Product)
+        .filter(
+            Product.user_id == user_id,
+            Product.image_url.isnot(None),
+            Product.is_available.is_(True),
+        )
+        .all()
+    )
+    
+    response_lower = response_text.lower()
+    
+    for product in products_with_images:
+        if product.name.lower() in response_lower:
+            image_path = product.image_url.strip()
+
+            # Encode spaces and special characters safely for Twilio.
+            encoded_path = quote(image_path, safe="/:")
+
+            if encoded_path.startswith(("http://", "https://")):
+                public_url = encoded_path
+            else:
+                public_url = f"{base_url}/{encoded_path.lstrip('/')}"
+
+            print(
+                f"[Webhook] Matched product '{product.name}' "
+                f"(ID: {product.id})-> image: {public_url}"
+            )
+
+            return public_url, product.id
+
+    return None, None
 
 @router.post("")
 async def receive_message(
@@ -49,6 +93,7 @@ async def receive_message(
         customer_phone = data["phone_number"]
         message_text   = data["message_text"]
         message_type   = data["message_type"]
+        profile_name   = data.get("customer_name")
 
         # ── Unsupported type (image, voice note, sticker) ────────────
         if message_type != "text" or not message_text:
@@ -74,10 +119,59 @@ async def receive_message(
             message_text=message_text,
             user_id=business.id,
             db=db,
+            profile_name=profile_name,
+        )
+        
+        if not result.get("response"):
+            print("[Webhook] AISHA returned no response")
+            print(f"[Webhook] Full result: {result}")
+            return Response(status_code=200)
+        
+        # find product image to attach
+        media_url = None
+
+        matched_image_url, product_id = find_product_image(
+        response_text=result["response"],
+        user_id=business.id,
+        db=db,
         )
 
+        if matched_image_url and product_id:
+        # customer_phone is stable and unique for the WhatsApp customer.
+        # Redis keys can safely use strings, so we use it as customer_id.
+            customer_id = customer_phone
+
+            if already_sent_image(
+                customer_id=customer_id,
+                user_id=business.id,
+                product_id=product_id,
+            ):
+                print(
+                    f"[Webhook] Image already sent for product {product_id} "
+                    f"to {customer_phone}; skipping."
+                )
+            else:
+                media_url = matched_image_url
+
+            # Mark it BEFORE sending so duplicate webhook requests do not
+            # send the same image again.
+                mark_image_sent(
+                    customer_id=customer_id,
+                    user_id=business.id,
+                    product_id=product_id,
+                )
+
+                print(
+                    f"[Webhook] First image for product {product_id} "
+                    f"to {customer_phone}; attaching image."
+                )
+
         # ── Send AISHA's reply to the customer ────────────────────────
-        sent = send_text_message(customer_phone, result["response"])
+        sent = send_text_message(
+            to_phone=customer_phone, 
+            message= result["response"],
+            media_url=media_url,
+        )
 
         if not sent:
             print(f"[Webhook] Failed to deliver reply to {customer_phone}")

@@ -16,7 +16,7 @@ def _get_client() -> Client:
     return Client(sid, token)
     
     
-def send_text_message(to_phone: str, message: str) -> bool:
+def send_text_message(to_phone: str, message: str, media_url:str =None) -> bool:
     """
     Sends a plain text WhatsApp message to a customer.
 
@@ -33,11 +33,17 @@ def send_text_message(to_phone: str, message: str) -> bool:
             print("[Twilio] TWILIO_WHATSAPP_NUMBER not set in .env")
             return False
         
-        msg = client.messages.create(
-            from_=f"whatsapp:{from_number}",
-            to = f"whatsapp:{to_phone}",
-            body=message,
-        )
+        params = {
+           "from_": f"whatsapp:{from_number}",
+            "to" : f"whatsapp:{to_phone}",
+            "body" :message,
+        }
+        
+        if media_url:
+            params["media_url"]= [media_url]
+            print(f"[TWILIO] Sending with image: {media_url}")
+        
+        msg = client.messages.create(**params)
         print(f"[TWILIO] Sent to {to_phone} - SID: {msg.sid}")
         return True
 

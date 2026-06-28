@@ -18,7 +18,10 @@ function formatPhone(phone) {
   return phone
 }
 
-function initials(phone) {
+function initials(phone, name) {
+  if (name) {
+    return name.split(' ').map(word=>word[0]).join('').slice(0, 2).toUpperCase()
+  }
   if (!phone) return '?'
   return phone.replace(/\D/g, '').slice(-3, -1)
 }
@@ -244,13 +247,13 @@ export default function Conversations() {
                                    ${active
                                      ? 'bg-amber-500 text-white'
                                      : 'bg-amber-50 text-amber-700'}`}>
-                    {initials(c.customer_phone)}
+                    {initials(c.customer_phone, c.customer_name)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1">
                       <p className={`text-sm font-medium truncate
                                      ${active ? 'text-amber-700' : 'text-slate-700'}`}>
-                        {formatPhone(c.customer_phone)}
+                        {c.customer_name ?? formatPhone(c.customer_phone)}
                       </p>
                       <span className="text-[10px] text-slate-400 shrink-0">
                         {timeAgo(c.last_message_time)}
@@ -283,19 +286,24 @@ export default function Conversations() {
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-amber-50 text-amber-700
                                   flex items-center justify-center text-xs font-semibold">
-                    {initials(selected.customer_phone)}
+                    {initials(selected.customer_phone, selected.customer_name)}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-slate-800">
-                        {formatPhone(selected.customer_phone)}
+                        {selected.customer_name ??formatPhone(selected.customer_phone)}
                       </p>
                       <StatusBadge status={currentStatus} />
                     </div>
                     <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                       <Phone size={10} />
                       {selected.customer_phone}
+                      {selected.customer_name && (
                       <span className="mx-1">·</span>
+                      )}
+                       {selected.customer_name && (
+                          <span>{formatPhone(selected.customer_phone)}</span>
+                       )}
                       <Clock size={10} />
                       {selected.total_messages} messages
                     </p>
