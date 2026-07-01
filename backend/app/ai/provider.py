@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-
+# Cost tracking - switch to Groq when Gemini credit 
+GEMINI_CREDIT_THRESHOLD = float(os.getenv("GEMINI_CREDIT_THRESHOLD", "10.0"))
 
 #function calling for the AI-same way and get a string back
 def get_ai_response(prompt:str,conversation_history: list= None) -> str:
@@ -39,27 +40,40 @@ def get_ai_response(prompt:str,conversation_history: list= None) -> str:
         )
 
 def _call_gemini(prompt: str, conversation_history: list) -> str:
-    import google.generativeai as genai
-
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=prompt
+    import vertexai
+    from vertexai.generative_models import GenerativeModel, Context, Part
+    
+     # Initialize Vertex AI with your project
+    vertexai.init(
+        project=os.getenv("GOOGLE_CLOUD_PROJECT", "gen-lang-client-0949791582"),
+        location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
     )
 
+    model = GenerativeModel(
+        model_name="gemini-2.0-flash-001",
+        system_instruction=prompt,
+    )
+    
+    #Guard - if history is empty, send a default greeting
+    if not conversation_history:
+        response = model.generate_content("Hello")
+        return response.text
+
     # Convert history — all messages except the last one
-    gemini_history = []
-    for message in conversation_history[:-1]:
-        role = "model" if message["role"] == "assistant" else "user"
-        gemini_history.append({
-            "role": role,
-            "parts": [message["content"]]
-        })
-
-    chat = model.start_chat(history=gemini_history)
-
-    last_message = conversation_history[-1]["content"] if conversation_history else "Hello"
+    
+    history = []
+    for msg in conversation_history[:-1]:
+        role = "model" if msg["role"] == "assistant" else "user"
+        history.append(
+            Content(
+                role=role,
+                parts=[Part.from_text(msg["content"])])
+            )
+        
+    chat = model.start_chat(history=history)
+    
+    #send the latest message
+    last_message = conversation_history[-1]["content"]
     response = chat.send_message(last_message)
     return response.text
 

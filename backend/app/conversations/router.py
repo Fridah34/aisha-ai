@@ -20,7 +20,9 @@ router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 @router.get("", response_model=list[ConversationSummary])
 def get_inbox(user_id: int, db: Session = Depends(get_db)):
-    return crud.get_inbox(db, user_id)
+    result = crud.get_inbox(db, user_id)
+    print('DEBUG >>>', result)
+    return result
 
 
 @router.get("/{customer_id}", response_model=ConversationThread)

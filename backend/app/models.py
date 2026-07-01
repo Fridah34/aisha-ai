@@ -6,16 +6,17 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Numeric,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
+    Enum as EnumSQL,
 )
-from sqlalchemy import Enum as EnumSQL
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-
+from sqlalchemy import UniqueConstraint
 
 class OrderStatus(enum.Enum):
     pending = "pending"
