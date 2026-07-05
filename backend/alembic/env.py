@@ -7,7 +7,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from alembic import context
 from app.models import Base
-from app.database import engine
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
