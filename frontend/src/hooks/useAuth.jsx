@@ -12,16 +12,31 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../api/auth';
 
-//create the shared storage box for our authenticatio status
+//create the shared storage box for our authentication status
 const AuthContext = createContext(null);
+
+const parseFastApiError = (err, fallbackMessage) => {
+    const detail = err.response?.data?.detail;
+
+    if (Array.isArray(detail) && detail.length > 0) {
+        return detail[0]?.msg || fallbackMessage;
+    }
+
+    if (typeof detail === 'string') {
+        return detail;
+    }
+
+    return fallbackMessage;
+};
+
 export const AuthProvider = ({children}) => {
 
     //=====================================================
     //AUTHENTICATION STATES MEMORY
     //=====================================================
-    const [user, setUser] = useState(null);  //stores active user profile rows (name, emai,id)
+    const [user, setUser] = useState(null);  //stores active user profile rows (name, email, id)
     const [token, setToken] = useState(null);// stores active security accessToken string
-    const [loading, setLoading] = useState(false); //Tracks if the  app is busy checking the login status
+    const [loading, setLoading] = useState(true); //Tracks if the  app is busy checking the login status
     const [error,setError] = useState(null);  //Captures errors messages (e.g"Login failed")
 
 
@@ -30,11 +45,9 @@ export const AuthProvider = ({children}) => {
     //=====================================================
     //runs automatically once when the app first opens to check if the user is already logged in
     useEffect(() => {
-        const storedToken = localStorage.getItem('accessToken');
         const storedUser = localStorage.getItem('user');
         //if we find saved keys in the browser restore them into our active memory state
-        if (storedToken && storedUser) {
-            setToken(storedToken);
+        if (storedUser) {
             setUser(JSON.parse(storedUser));
         }
         setLoading(false); //Done checking the local storage
@@ -44,7 +57,6 @@ export const AuthProvider = ({children}) => {
 //HELPER METHOD (WIPING SESSION DATA)
 //============================================================
 const clearSession = useCallback(() => {
-    localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);
@@ -60,18 +72,23 @@ const signup = useCallback(async (credentials) => {
     setError(null);
     try {
         //send register inputs via Axios.(skipAuth tells Axios not to look  for a token yet)
-        const { data} = await api.post('/auth/register',credentials, { skipAuth: true });
+        const { data} = await api.post('/auth/register',credentials, {
+            skipAuth: true,
+            withCredentials: true,
+        });
 
         //if the backend automatically logs the user in on signup and returns  a token save it
         if (data.access_token) {
-            localStorage.setItem('accessToken',data.access_token);
-            localStorage.setItem('user', JSON.stringify(data.user));
             setToken(data.access_token);
             setUser(data.user);
+            localStorage.setItem('user', JSON.stringify(data.user));
+        } else if (data.user) {
+            setUser(data.user);
+            localStorage.setItem('user', JSON.stringify(data.user));
         }
         return{ success: true, user: data.user || data };
     } catch (err) {
-        const errorMessage = err.response?.data?.deetail || 'Signup failed';
+        const errorMessage = parseFastApiError(err, 'Signup failed');
         setError(errorMessage);
         throw new Error(errorMessage);
     } finally {
@@ -87,18 +104,22 @@ const login = useCallback(async (credentials) => {
     setLoading(true);
     setError(null);
     try {
-        const { data } = await api.post('/auth/login', credentials, { skipAuth: true });
+        const { data } = await api.post('/auth/login', credentials, {
+            skipAuth: true,
+            withCredentials: true,
+        });
 
         if (data.access_token) {
-            //save the  data locally  so the browser remember the user even if they close or refresh the page
-            localStorage.setItem('accessToken', data.access_token);
-            localStorage.setItem('user', JSON.stringify(data.user));
             setToken(data.access_token);
             setUser(data.user);
+            localStorage.setItem('user', JSON.stringify(data.user));
+        } else if (data.user) {
+            setUser(data.user);
+            localStorage.setItem('user', JSON.stringify(data.user));
         }
         return { success: true, user: data.user || data };
     } catch (err) {
-        const errorMessage = err.response?.data?.detail || 'Login failed';
+        const errorMessage = parseFastApiError(err, 'Login failed');
         setError(errorMessage);
         throw new Error(errorMessage);
     } finally {
@@ -110,16 +131,21 @@ const login = useCallback(async (credentials) => {
 //USER LOGOUT (DEACTIVATION EVENT)
 //==============================================================
 //Notifies the backend to terminate  session tracking  and clears  local storage tokens
-const logout = useCallback(async() => {
-    try {
-        await api.post('/auth/logout');//tell the backend we're leaving
-
-    } catch (err) {
-        console.error('Logout error:', err);
-    } finally {
-        clearSession();
-    }
-}, [clearSession]);
+ const logout = useCallback(async () => {
+        setError(null);
+        try {
+            // Tell the backend we are destroying this token session
+            await api.post('/auth/logout', null, { withCredentials: true });
+        } catch (err) {
+            const errorMessage = parseFastApiError(err, 'Logout failed');
+            setError(errorMessage);
+            throw new Error(errorMessage);
+        } finally {
+            // FIXED: Wipes out state metrics seamlessly, allowing App.jsx top-level
+            // fallback routes to handle clean client-side routing redirects automatically.
+            clearSession();
+        }
+    }, [clearSession]);
 
 //=============================================================
 //THE SHARED CONTROL INTERFACE (VALUE PACK)
@@ -130,7 +156,7 @@ const value = {
     token,
     loading,
     error,
-    isAuthenticated: !!token,
+    isAuthenticated: !!(token || user),
     login,
     signup,
     logout,

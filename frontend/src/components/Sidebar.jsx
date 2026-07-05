@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Package,
   Settings, LogOut, Store,
 } from 'lucide-react'
 import { getSettings } from '../api/settings'
+import { useAuth } from '../hooks/useAuth'
 
 const links = [
   { to: '/overview',      label: 'Overview',      icon: LayoutDashboard },
@@ -20,10 +21,17 @@ const links = [
  */
 export default function Sidebar() {
   const [business, setBusiness] = useState(null)
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
 
   useEffect(() => {
     getSettings().then(setBusiness).catch(() => setBusiness(null))
   }, [])
+
+  const handleLogoutClick = async () => {
+    await logout()
+    navigate('/login')
+  }
 
   return (
     <aside className="flex flex-col w-60 bg-slate-900 border-r border-slate-800 h-screen shrink-0">
@@ -34,7 +42,7 @@ export default function Sidebar() {
           <Store size={16} className="text-slate-900" />
         </div>
         <div>
-          <p className="text-white font-bold text-base leading-tight">AISHA</p>
+          <p className="text-white font-bold text-base leading-tight">{user?.name || 'AISHA'}</p>
           <p className="text-amber-500 text-xs font-medium">AI Sales Assistant</p>
         </div>
       </div>
@@ -76,14 +84,21 @@ export default function Sidebar() {
             )}
           </>
         ) : (
-          <p className="text-slate-500 text-xs">Start backend to load</p>
+          <>
+            <p className="text-white text-sm font-semibold truncate">
+              {user?.name || 'Active User'}
+            </p>
+            <p className="text-slate-400 text-xs truncate mt-0.5">
+              {user?.email || 'Loading business data...'}
+            </p>
+          </>
         )}
       </div>
 
       {/* ── Logout ── */}
       <div className="px-2 pb-4 border-t border-slate-800 pt-3">
         <button
-          onClick={() => alert("AUTH NOTE: wire to Eve's JWT logout endpoint")}
+          onClick={handleLogoutClick}
           className="flex items-center gap-3 w-full px-4 py-3 rounded-xl
                      text-slate-400 hover:text-red-400 hover:bg-slate-800
                      transition-colors text-sm font-medium"

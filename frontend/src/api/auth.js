@@ -2,7 +2,7 @@
  *===============================================================
  *AISHA AI - API CLIENT MODULE
  *================================================================
- *This file configures Axios to act as the primary communication link bettween 
+ *This file configures Axios to act as the primary communication link between
  *our React frontend and the backend server.IT manages automatic login token insertion
  *and handles session expiration redirects globally
 
@@ -19,6 +19,7 @@
  const api = axios.create({
     baseURL: API_BASE_URL,
     timeout: 15000,  // cancel requests that take longer than 15 seconds
+    withCredentials: true,
     headers: {
         'Content-Type': 'application/json',
     },
@@ -35,13 +36,6 @@
     // does not have a login account or token yet. We look for a special "skipAuth" 
     // flag in our code so we can let this public request pass through cleanly.
     if (config.skipAuth) return config;
-
-    const token = localStorage.getItem('accessToken');
-
-    //if a token exist ,attach it to the message header so the server knows who we are
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
     return config;
     },
     (error) => {
@@ -60,11 +54,10 @@
             const currentPath = window.location.pathname;
             // If the server responds with a 401 Unauthorized error, it means the user's session has expired or is invalid.
             if (error.response && error.response.status === 401 && currentPath !== '/login') {
-                // Clear any stored tokens and user data
-                localStorage.removeItem('accessToken');
+                // Clear locally cached user data
                 localStorage.removeItem('user');
 
-                //kick the user back to thelogin screen so they can re-authenticate
+                //kick the user back to the login screen so they can re-authenticate
                 window.location.href = '/login';
             }
             return Promise.reject(error);

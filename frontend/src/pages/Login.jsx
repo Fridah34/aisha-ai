@@ -5,10 +5,14 @@
 import { useState } from 'react';  //memory box and must be at the very top opf the file
 import { useNavigate, useLocation, Link} from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { Mail, Eye, EyeOff} from 'lucide-react';
+
+const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
 
 // const tells the computer: "Create a labeled box for this data, and never let its name or purpose change."s
 export default function Login() {
-const navigate = useNavigate();  //force switch pages programatcally
+const navigate = useNavigate();  //force switch pages programmatically
 const location = useLocation(); //get current location page
 const { login, loading, error } = useAuth();
 
@@ -16,6 +20,7 @@ const [ formData, setFormData ] = useState({
     email: '',
     password: ''
 });
+const [showPassword, setShowPassword] = useState(false);
 const [ formErrors, setFormErrors ] = useState('');
 const targetRedirectPath = location.state?.from?.pathname || '/overview';
 
@@ -32,15 +37,28 @@ const handleChange = (e) => {
 //FORM SUBMISSION AND BACKEND COORDINATION
 //===============================================================================================
 const handleSubmit = async (e) => {
-    e.preventDefault();  //stop the browser from refreshin the page  when the form is submitted
+    e.preventDefault();  //stop the browser from refreshing the page  when the form is submitted
     setFormErrors('');
+  const email = formData.email.trim();
+  const password = formData.password;
 
-    if (!formData.email || !formData.password) {
+  if (!email || !password) {
         setFormErrors('email and password required');
         return;
     }
+
+  if (!EMAIL_REGEX.test(email)) {
+    setFormErrors('Please enter a valid email address');
+    return;
+  }
+
+  if (password.length < 8) {
+    setFormErrors('Password must be at least 8 characters long');
+    return;
+  }
+
     try {
-        await login(formData);
+    await login({ ...formData, email });
         navigate (targetRedirectPath , { replace: true });  //redirect to the target page after successful login
     } catch (err) {
         setFormErrors(err.message || 'Invalid credentials');
@@ -48,7 +66,7 @@ const handleSubmit = async (e) => {
 };
 
 return (
-    //Base Layout wrapper: Dark- slate diagonal gradient , centers  the card prefectly on the screen
+    //Base Layout wrapper: Dark- slate diagonal gradient , centers  the card perfectly on the screen
     <div className= "min-h-screen  bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center px-4">
         <div className="w-full max-w-md">
 
@@ -74,12 +92,17 @@ return (
             <div className="mb-5 p-3.5 bg-red-900/30 border border-red-700/40 rounded-lg">
               <p className="text-red-400 text-sm font-medium">{formErrors || error}</p>
             </div>
+            
           )}
 
           {/* Interactive Input Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
+
+            {/* Email Input Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">Email Address</label>
+              <div className="relative flex items-center">
+                <Mail className="absolute right-3 w-5 h-5 text-slate-400 pointer-events-none" />
               <input
                 type="email" id="email" name="email" 
                 disabled={loading} // Freeze field if backend request is processing
@@ -87,17 +110,30 @@ return (
                 className="w-full px-4 py-2.5 bg-slate-700/60 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition disabled:opacity-60"
                 placeholder="you@example.com" required
               />
+              </div>
             </div>
-
+              
+              {/* Password Input Field */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">Password</label>
-              <input
-                type="password" id="password" name="password" 
-                disabled={loading} // Freeze field if backend request is processing
-                value={formData.password} onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-slate-700/60 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition disabled:opacity-60"
-                placeholder="••••••••" required
-              />
+              <div className="relative flex items-center">
+                <input
+                  type={showPassword ? 'text' : 'password'} id="password" name="password" 
+                  disabled={loading} // Freeze field if backend request is processing
+                  value={formData.password} onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-slate-700/60 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition disabled:opacity-60"
+                  placeholder="••••••••" required
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 text-slate-400 hover:text-slate-200 transition"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
 
             {/* Submit Action Button */}

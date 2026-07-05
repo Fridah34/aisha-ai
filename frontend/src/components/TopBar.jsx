@@ -2,9 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Settings, User, Bell, ChevronDown, LogOut, } from 'lucide-react'
 import { getSettings } from '../api/settings'
+import { useAuth } from '../hooks/useAuth'
 
 export default function TopBar() {
   const navigate      = useNavigate()
+  const { logout }   = useAuth()
   const [open, setOpen]   = useState(false)
   const [owner, setOwner] = useState(null)
   const dropdownRef       = useRef(null)
@@ -113,7 +115,7 @@ export default function TopBar() {
 
               <div className="border-t border-slate-100 mt-1 pt-1">
                 <button
-                  onClick={() => alert('AUTH NOTE: wire to Eve\'s JWT logout endpoint')}
+                  onClick={logout} // FIXED: Wipes browser cache strings and forces clean redirects instantly
                   className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm
                              text-red-500 hover:bg-red-50 transition-colors"
                 >
