@@ -1,17 +1,15 @@
 import app.models
+from app.conversations.router import router as conversations_router
 from app.database import Base, engine
+from app.products.router import router as products_router
 
 # --- MOVE ALL ROUTER IMPORTS TO THE TOP HERE ---
 from app.routes.auth import router as auth_router
+from app.settings.router import router as settings_router
+from app.webhook.router import router as webhook_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-
-#from app.products.router import router as products_router
-#from app.conversations.router import router as conversations_router
-#from app.settings.router import router as settings_router
-#from app.webhook.router import router as webhook_router
-
 
 # --- APPLICATION SETUP ---
 #Base.metadata.drop_all(bind=engine)
@@ -75,10 +73,10 @@ def health():
 app.include_router(auth_router)
 
 # 2. Keep these commented out! Turn them on one at a time to test them.
-# app.include_router(products_router)
-# app.include_router(conversations_router)
-# app.include_router(settings_router)
-# app.include_router(webhook_router)
+app.include_router(products_router)
+app.include_router(conversations_router)
+app.include_router(settings_router)
+app.include_router(webhook_router)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #=================================================================================================
-#UTILITY OPERATIOINS: Security, cryptography and Token management
+#UTILITY OPERATIONS: Security, cryptography and Token management
 #=================================================================================================
 
 import os

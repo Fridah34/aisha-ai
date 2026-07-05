@@ -16,13 +16,12 @@ from app.crud import get_user_by_email
 from app.database import get_db
 from app.models import User
 from app.schema import (
-    TokenResponse,
     UserGoogleRegister,
     UserLogin,
     UserRegister,
     UserResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 #===================ROUTER INITIALIZATION====================
@@ -42,13 +41,13 @@ router = APIRouter(
 
 @router.post(
     "/register",
-    response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register new Business Owner",
     description="Create new business account with email and password",
 )
 def register(
     user_data:UserRegister,
+    response: Response,
     db:Session = Depends(get_db) 
 ):
     # check if email already exist
@@ -70,7 +69,16 @@ def register(
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        return new_user
+        access_token = create_access_token(data={"sub": new_user.email})
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=1800,
+        )
+        return {"user": UserResponse.model_validate(new_user)}
     
     except Exception:
         db.rollback() #undo any changes made during the creation process
@@ -131,12 +139,12 @@ def register_google(
 
 @router.post(
     "/login",
-    response_model=TokenResponse,
     summary="Loginwith email & Password",
     description="Authenticate and receive JWT access token",
 ) 
 def login(
     credentials: UserLogin,
+    response: Response,
     db: Session = Depends(get_db),
 ):  
 # Step 1: Find User by email
@@ -166,10 +174,16 @@ def login(
 
 # Step 4: Create Access Token
   access_token = create_access_token(data={"sub":user.email})
+  response.set_cookie(
+      key="access_token",
+      value=access_token,
+      httponly=True,
+      secure=True,
+      samesite="lax",
+      max_age=1800,
+  )
   return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": UserResponse.model_validate(user)
+      "user": UserResponse.model_validate(user)
 }
 
 #=============GET ME ENDPOINT====================
@@ -193,11 +207,17 @@ def get_me(
     description="Logout and Invalidate session",
 )
 def logout(
+    response: Response,
     current_user: User = Depends(get_current_user)
 ):
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
     return{
-        "message":f"Goodbye {current_user.name}, you have been logged out successfully.",
-        "user": UserResponse.model_validate(current_user)
+        "message":"Logged out successfully"
     }
 
 #==========VERIFY TOKEN ENDPOINT====================

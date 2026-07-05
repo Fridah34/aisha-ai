@@ -3,7 +3,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from app.auth.utils import is_password_strong
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class OrderStatus(str, Enum):
@@ -37,6 +38,27 @@ class UserRegister(BaseModel):
         if self.password != self.confirm_password:
             raise ValueError("Passwords do not match")
         return self
+
+    # Enforces real formatting checks and explicitly bans placeholder domains
+    @field_validator("email")
+    @classmethod
+    def block_fake_testing_domains(cls, value: str) -> str:
+        lowercase_email = value.lower()
+
+        bad_domains = ["example.com", "test.com", "invalid.com", "fake.com"]
+        if any(domain in lowercase_email for domain in bad_domains):
+            raise ValueError("Please use a real email address, not a placeholder domain.")
+        
+        return value
+    
+    #Automatically  hooks ito your custom ' is _password_strong' utility rule
+    @field_validator("password")
+    @classmethod
+    def enforce_strong_passwords(cls, value: str) -> str:
+        if not is_password_strong(value):
+            raise ValueError("Password is not strong enough.")
+        
+        return value
 
     model_config = {
         "json_schema_extra": {

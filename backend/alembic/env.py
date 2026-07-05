@@ -1,17 +1,17 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
-import sys
-from pathlib import Path
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+import sys
+from logging.config import fileConfig
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from app.models import Base #noqa: E402
+from alembic import context
+from app.models import Base
+from app.database import engine
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
+
+load_dotenv()
 
 target_metadata = Base.metadata
 
@@ -34,7 +34,7 @@ if config.config_file_name is not None:
 
 def get_url():
     # Get database URL from environment variable
-    return os.getenv("DATABASE_URL", "postgresql://user:password@localhost/aisha_db")
+    return os.getenv("DATABASE_URL", "postgresql://EVE.0798080246@localhost/aisha_db")
 
 
 def run_migrations_offline() -> None:
