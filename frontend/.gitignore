@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Sensitive Application Secrets & Backend URLs
+.env
+.env.production
+.env.development
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
