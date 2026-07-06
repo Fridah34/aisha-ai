@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models import Conversation, Customer, ConversationState, HandoverStatus
 
+
 def get_inbox(db: Session, user_id: int) -> list[dict]:
     """
     Returns one row per customer - their latest message and metadata.
@@ -37,7 +38,19 @@ def get_inbox(db: Session, user_id: int) -> list[dict]:
         .all()
     )
     
-    return[
+    #step 3 -fetch all conversation states for this business in one query-This avoids N+1 queries and join ambiguity
+    states = {
+        s.customer_id : s.status
+        for s in db.query(ConversationState)
+        .filter(ConversationState.user_id == user_id)
+        .all()
+    }
+    
+    result = []
+    for conv, customer, last_time, total in rows:
+        status = states.get(customer.id, HandoverStatus.ai_active)
+        
+        result.append(
         {
             "customer_id": customer.id,
             "customer_phone": customer.phone_number,
@@ -45,14 +58,17 @@ def get_inbox(db: Session, user_id: int) -> list[dict]:
             "last_message": conv.message_text,
             "last_message_time": last_time,
             "total_messages": total,
-        }
-        for conv, customer, last_time,total in rows
-    ]
+            "conversation_status": status.value,
+        }     
+    )
+    return result
     
 def get_thread(db: Session, customer_id: int, user_id: int):
     customer = (
         db.query(Customer)
-        .filter(Customer.id == customer_id)
+        .filter(Customer.id == customer_id,
+                Customer.user_id == user_id,
+                )
         .first()
     )
     if not customer:

@@ -7,6 +7,7 @@ Replace with Depends(get_current_user) when Eve's JWT auth is ready.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+import asyncio
 
 from app.models import ConversationState, HandoverStatus, Customer
 from app.ai.service import save_message
@@ -14,14 +15,25 @@ from app.webhook.client import send_text_message
 from app.database import get_db
 from app.conversations import crud
 from app.conversations.schemas import ConversationSummary, ConversationThread
+from app.websocket.router import manager
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
+
+#helper fucntion to broadcast status changes
+async def broadcast_status_change(user_id: int, customer_id: int, new_status: str):
+    """Broadcast a status change to all websocket connections of a user"""
+    message = {
+        "type": "status_change",
+        "customer_id": customer_id,
+        "new_status": new_status,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    await manager.broadcast_to_user(user_id, message)
 
 
 @router.get("", response_model=list[ConversationSummary])
 def get_inbox(user_id: int, db: Session = Depends(get_db)):
     result = crud.get_inbox(db, user_id)
-    print('DEBUG >>>', result)
     return result
 
 
@@ -34,7 +46,7 @@ def get_thread(customer_id: int, user_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{customer_id}/takeover")
-def takeover_conversation(customer_id: int, user_id: int, db: Session = Depends(get_db)):
+async def takeover_conversation(customer_id: int, user_id: int, db: Session = Depends(get_db)):
     """Owner takes over — AISHA stops auto-replying."""
     state = (
         db.query(ConversationState)
@@ -54,11 +66,15 @@ def takeover_conversation(customer_id: int, user_id: int, db: Session = Depends(
         state.status = HandoverStatus.human_active
         state.taken_over_at = datetime.now(timezone.utc)
     db.commit()
+
+    #Broadcast the status change
+    await broadcast_status_change(user_id, customer_id, HandoverStatus.human_active.value)
+
     return {"status": state.status.value}
 
 
 @router.patch("/{customer_id}/resolve")
-def resolve_conversation(customer_id: int, user_id: int, db: Session = Depends(get_db)):
+async def resolve_conversation(customer_id: int, user_id: int, db: Session = Depends(get_db)):
     """Owner marks done — AISHA resumes on next customer message."""
     state = (
         db.query(ConversationState)
@@ -70,6 +86,10 @@ def resolve_conversation(customer_id: int, user_id: int, db: Session = Depends(g
     state.status = HandoverStatus.resolved
     state.resolved_at = datetime.now(timezone.utc)
     db.commit()
+
+    # Broadcast the status change
+    await broadcast_status_change(user_id, customer_id, HandoverStatus.resolved.value)
+
     return {"status": state.status.value}
 
 

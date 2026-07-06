@@ -102,17 +102,36 @@ async def receive_message(
             return Response(status_code=200)
 
         print(f"[Webhook] Message from {customer_phone}: {message_text}")
-
+        
+        # MArketplace lookup
+        marketplace_session = get_or_create_marketplace_session(customer_phone, db)
+        
+        if marketplace_session.selected_business_id is None:
+            reply = handle_marketplace_step(marketplace_session, message_text, db)
+            if reply:
+                send_text_message(to_phone=customer_phone, message=reply)
+            return Response(status_code=200)
+          
         # ── Multi-tenancy lookup ──────────────────────────────────────
         # Sandbox: one shared Twilio number, so we use the first active business.
         # Production: each business gets their own Twilio number.
         # When that happens, look up by data["twilio_number"] instead.
-        business = db.query(User).filter(User.is_active).first()
+        business = (
+            db.query(User)
+            .filter(User.id == marketplace_session.selected_business_id, User.is_active)
+            .first()
+        )
 
         if not business:
-            print("[Webhook] No active business found — cannot process message")
+            marketplace_Session.selected_business_id = None
+            marketplace_session.pending_action = None
+            db.commit()
+            send_text_message(
+                to_phone=customer_phone,
+                message = "That store isn't available anymore. Let's find you another!"
+            )
             return Response(status_code=200)
-
+        
         # ── Process through AISHA's AI engine ────────────────────────
         result = process_customer_message(
             phone_number=customer_phone,

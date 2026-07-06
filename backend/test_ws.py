@@ -22,6 +22,14 @@ async def test_websocket():
             response = await websocket.recv()
             print(f"📨 Received: {response}")
             
+            # Send test message
+            await websocket.send(json.dumps({"type": "test", "message": "Hello WebSocket"}))
+            print("📤 Sent test message")
+            
+            # Receive test response
+            response = await websocket.recv()
+            print(f"📨 Received: {response}")
+            
             print("✅ All tests passed!")
             
     except websockets.exceptions.ConnectionClosedError as e:

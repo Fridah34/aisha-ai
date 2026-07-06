@@ -8,6 +8,7 @@
  */
 
 const BASE = '/api'
+const WS_BASE = 'ws://127.0.0.1:8000' 
 
 // AUTH NOTE: Replace with real user id from JWT when auth is ready
 export const USER_ID = 1
@@ -27,4 +28,9 @@ export async function apiFetch(path, options = {}) {
   if (res.status === 204) return null
 
   return res.json()
+}
+
+ //WebSocket helper
+export function getWebSocketUrl(userId = USER_ID) {
+  return `${WS_BASE}/ws/conversations/${userId}`
 }

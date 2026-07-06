@@ -1,11 +1,12 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func  # Add this import
-from app.models import Product, Conversation, Customer, MessageSender, User
+from app.models import Product, Conversation, Customer, MessageSender, User, Category
 from app.ai.provider import get_ai_response
 from app.ai.prompt_builder import build_system_prompt
 from app.ai import cache
 from app.ai.token_utils import truncate_history_to_token_limit
 from app.models import ConversationState, HandoverStatus
+import re
 
 SWAHILI_INDICATORS = {
         # greetings
@@ -26,6 +27,7 @@ SWAHILI_INDICATORS = {
         "yake", "yangu", "yenu", "hii", "hiyo", "hizo",
     }
 
+NUMBERS = ["1","2","3","4","5","6","7","8","9","10"]
 
 def get_business_prompt(user_id: int, db: Session) -> str:
     #Step 1 - check Redis first
@@ -55,11 +57,11 @@ def get_business_prompt(user_id: int, db: Session) -> str:
             "price": float(p.price),
             "is_available": p.is_available,
             "description": p.description,
-            "category": p.category,
+            "category": p.category_name,
             "variant_label": p.variant_label,
             "variant_options": p.variant_options,
             "unit": p.unit,
-            "upsell_text":p.upsell_text,   # ← new
+            "upsell_text":p.upsell_text,  
             "image_url":p.image_url,  
         }
         for p in products
@@ -164,7 +166,7 @@ def normalize_phone(phone_number:str) -> str:
     return phone
 
 
-def get_or_create_customer(phone_number: str, db: Session, profile_name:str | None =None) -> Customer:
+def get_or_create_customer(phone_number: str,user_id:int, db: Session, profile_name:str | None =None) -> Customer:
     #Finds a customer by phone number or creates them if first message.Phone number is the customer's only identity — no accounts needed.
     #Normalizes the number before lookup to prevent duplicate records.
     
@@ -172,12 +174,14 @@ def get_or_create_customer(phone_number: str, db: Session, profile_name:str | No
     
     customer = (
         db.query(Customer)
-        .filter(Customer.phone_number == phone)
+        .filter(Customer.phone_number == phone,
+                Customer.user_id == user_id,
+                )
         .first()
     )
 
     if not customer:
-        customer = Customer(phone_number=phone, name=profile_name)
+        customer = Customer(phone_number=phone,user_id=user_id, name=profile_name)
         db.add(customer)
         db.commit()
         db.refresh(customer)
@@ -194,6 +198,13 @@ def get_or_create_customer(phone_number: str, db: Session, profile_name:str | No
 def detect_handover(response: str) -> bool:
     return "[HANDOVER_REQUIRED]" in response
 
+def detect_category_browse_request(response:str) -> bool:
+    """
+    True when AISHA decided (via the system prompt instruction) that the customer wants to browse generally rather than asking about something specific. Some mechanism as detect_handover -a tag the LLM emits,
+    stripped later by clean_response() before the customer see it.
+    """
+    return "[SHOW_CATEGORIES]" in response
+
 def classify_handover_urgency(customer_message: str) -> str:
     text_lower = customer_message.lower()
     if any(keyword in text_lower for keyword in URGENT_KEYWORDS):
@@ -205,7 +216,11 @@ def clean_response(response: str) -> str:
     Strips internal tags before sending response to customer.
     Customers must never see system tags in their WhatsApp chat.
     """
-    return response.replace("[HANDOVER_REQUIRED]", "").strip()
+    response = response.replace("[HANDOVER_REQUIRED]", "")
+    response = response.replace("[SHOW_CATEGORIES]", "")
+    response = re.sub(r"\(.*?handover.*\)", "", response, flags=re.IGNORECASE)
+    response = re.sub(r"\(.*?handover.*\)", "", response, flags=re.IGNORECASE)
+    return response.strip()
 
 
 def detect_language(text: str) -> str:
@@ -218,6 +233,73 @@ def detect_language(text: str) -> str:
         return "sw"
     return "en"
 
+def get_categories_for_business(user_id: int, db: Session) -> list[Category]:
+    """Active categories for a business, in the order the owner wants them shown."""
+    return (
+        db.query(Category)
+        .filter(Category.user_id == user_id, Category.is_active.is_(True))
+        .order_by(Category.display_order, Category.name)
+        .all()
+    )
+    
+def format_category_list(categories: list[Category]) -> str:
+    """
+    Builds a plain-text WhatsApp message that *looks* like tappable buttons
+    using bold + numbered emoji. This is the free-form substitute for a real
+    Twilio interactive List Message, which requires a registered WhatsApp
+    sender we don't have yet.
+    """
+    lines = ["Which category are you shopping for today? 🛍️", ""]
+    for i, cat in enumerate(categories):
+        emoji = NUMBERS[i] if i < len(NUMBERS) else f"{i + 1}."
+        lines.append(f"{emoji} *{cat.name}*")
+    lines.append("")
+    lines.append("Just reply with a number or the category name.")
+    return "\n".join(lines)
+ 
+ 
+def match_category_selection(message_text: str, categories: list[Category]) -> Category | None:
+    """
+    Deterministic match of a customer's reply against the category list they
+    were just shown. Tried before falling back to the LLM — cheap, instant,
+    and can't hallucinate a category that doesn't exist.
+    """
+    text = message_text.strip().lower()
+ 
+    # Numeric match: "2", "2.", "option 2", emoji digit copy-pasted back, etc.
+    digits = re.sub(r"[^\d]", "", text)
+    if digits.isdigit():
+        index = int(digits) - 1
+        if 0 <= index < len(categories):
+            return categories[index]
+ 
+    # Name match: exact or the category name appears in what they typed
+    for cat in categories:
+        name_lower = cat.name.strip().lower()
+        if name_lower == text or name_lower in text:
+            return cat
+ 
+    return None
+ 
+ 
+def format_products_in_category(products: list[Product]) -> str:
+    """Plain-text product list sent after a customer picks a category."""
+    if not products:
+        return (
+            "We don't have items in that category right now — "
+            "want to see something else?"
+        )
+ 
+    lines = ["Here's what we have:", ""]
+    for p in products:
+        line = f"• *{p.name}* — Ksh {p.price}"
+        if p.unit:
+            line += f" / {p.unit}"
+        lines.append(line)
+    lines.append("")
+    lines.append("Want details on any of these, or ready to order?")
+    return "\n".join(lines)
+
 
 def process_customer_message(
     phone_number: str,
@@ -228,7 +310,7 @@ def process_customer_message(
 ) -> dict:
     #Main orchestrator — called by the WhatsApp webhook on every incoming customer message.
     # 1. Find or create customer
-    customer = get_or_create_customer(phone_number, db, profile_name)
+    customer = get_or_create_customer(phone_number,user_id, db, profile_name)
 
     # 2. Detect language for logging
     language = detect_language(message_text)
@@ -253,6 +335,54 @@ def process_customer_message(
     if state.status == HandoverStatus.resolved:
         state.status = HandoverStatus.ai_active
         db.commit()
+        
+    # 3.5 If we're waiting on a category selection, try to resolve it
+    #     deterministically before spending an LLM call on it.
+    if state.pending_action == "category_selection":
+        categories = get_categories_for_business(user_id, db)
+        matched = match_category_selection(message_text, categories)
+ 
+        if matched:
+            state.pending_action = None
+            db.commit()
+ 
+            products_in_category = (
+                db.query(Product)
+                .filter(
+                    Product.user_id == user_id,
+                    Product.category_id == matched.id,
+                    Product.is_available.is_(True),
+                )
+                .all()
+            )
+            reply = format_products_in_category(products_in_category)
+ 
+            save_message(
+                customer_id=customer.id,
+                user_id=user_id,
+                sender="assistant",
+                message_text=reply,
+                language=language,
+                db=db,
+            )
+ 
+            return {
+                "response": reply,
+                "needs_handover": False,
+                "handover_urgency": None,
+                "customer_id": customer.id,
+                "language": language,
+                "response_language": language,
+                "ai_responded": True,
+            }
+        else:
+            # No clean match — clear the flag and let the normal LLM flow
+            # handle this message like any other. The LLM still has the
+            # category list in its product data, so it can recover
+            # ("did you mean Electronics?") instead of the customer being
+            # stuck against a rigid picker.
+            state.pending_action = None
+            db.commit()
 
     # 4. Build prompt from real database data
     system_prompt = get_business_prompt(user_id, db)
@@ -274,9 +404,23 @@ def process_customer_message(
 
     # 9. Check for handover trigger
     needs_handover = detect_handover(clean)
+    
+    # 9b. Check whether AISHA wants to show the category picker
+    show_categories = detect_category_browse_request(clean)
 
     # 10. Clean internal tags from response
     clean = clean_response(clean)
+    
+    # 10b. If AISHA asked to show categories (and isn't simultaneously
+    #      handing over), append the category list and mark the state so
+    #      the next reply gets matched deterministically above.
+    if show_categories and not needs_handover:
+        categories = get_categories_for_business(user_id, db)
+        if categories:
+            category_text = format_category_list(categories)
+            clean = f"{clean}\n\n{category_text}" if clean else category_text
+            state.pending_action = "category_selection"
+            db.commit()
     
     # 12. Classify handover urgency (used by dashboard prioritisation)
     urgency = classify_handover_urgency(message_text) if needs_handover else None
@@ -315,38 +459,19 @@ def notify_handover(
 ) -> None:
     """
     Alerts the business owner when AISHA triggers a handover.
-    Logs to console AND sends a WhatsApp alert to the owner's number.
+    Logs the handover.The dashboard picks up needs_human conversations via polling/websocket - no whatsapp alert needed.
     """
-    from app.webhook.client import send_owner_alert  # local import avoids circular
 
     user     = db.query(User).filter(User.id == user_id).first()
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
 
-    phone    = customer.phone_number if customer else "unknown"
-    business = user.business_name   if user     else f"business {user_id}"
-    owner_phone = getattr(user, "whatsapp_phone_number", None)
-
     print(
         f"\n[HANDOVER {urgency.upper()}]\n"
-        f"Business : {business}\n"
-        f"Customer : {phone}\n"
+        f"Business : {user.business_name if user else user_id}\n"
+        f"Customer : {customer.phone_number if customer else 'unknown'}\n"
         f"Message  : {customer_message[:120]}\n"
-        f"Owner    : {owner_phone or 'not configured'}\n"
     )
 
-    # Send WhatsApp alert if owner has a number configured
-    if owner_phone:
-        sent = send_owner_alert(
-            owner_phone=owner_phone,
-            customer_phone=phone,
-            customer_message=customer_message,
-            urgency=urgency,
-        )
-        if not sent:
-            print(f"[Handover] Failed to send WhatsApp alert to owner {owner_phone}")
-    else:
-        print("[Handover] Owner has no whatsapp_phone_number — alert skipped")
-    
     
 def get_or_create_conversation_state(customer_id: int, user_id: int, db: Session) -> ConversationState:
     state = (

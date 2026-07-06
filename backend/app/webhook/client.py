@@ -55,24 +55,3 @@ def send_text_message(to_phone: str, message: str, media_url:str =None) -> bool:
         print(f"[Twilio] Unexpected error: {e}")
         return False
 
-
-def send_owner_alert(
-    owner_phone: str,
-    customer_phone: str,
-    customer_message: str,
-    urgency: str,
-) -> bool:
-    """
-    Notifies the business owner when a handover is triggered.
-    Sends a formatted alert to the owner's WhatsApp number.
-    """
-
-    alert = (
-        f"A customer needs your personal attention.\n\n"
-        f"*Customer:* {customer_phone}\n"
-        f"*Their message:* {customer_message[:200]}\n\n"
-        f"Reply to them directly on WhatsApp."
-    )
-
-    return send_text_message(owner_phone, alert)
-    

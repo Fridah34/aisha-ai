@@ -32,7 +32,6 @@ export function WebSocketProvider({ children }) {
       const ws = new WebSocket(wsUrl)
       
       ws.onopen = () => {
-        console.log('✅ WebSocket connected successfully')
         setIsConnected(true)
         setConnectionError(null)
         reconnectAttempts.current = 0
@@ -47,7 +46,6 @@ export function WebSocketProvider({ children }) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          console.log('📨 WebSocket message received:', data)
           setLastMessage(data)
           
           // Handle different message types
@@ -67,22 +65,18 @@ export function WebSocketProvider({ children }) {
                 timestamp: data.timestamp
               }
             }))
-          } else if (data.type === 'connection_established') {
-            console.log('✅ Connection confirmed by server:', data.message)
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error, event.data)
+          console.error('Error parsing WebSocket message:', error)
         }
       }
 
       ws.onclose = (event) => {
-        console.log(`🔌 WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`)
         setIsConnected(false)
         wsRef.current = null
         
         // Don't reconnect if it was a normal closure
         if (event.code === 1000 || event.code === 1001) {
-          console.log('Normal closure, not reconnecting')
           return
         }
         
@@ -90,20 +84,17 @@ export function WebSocketProvider({ children }) {
         if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
           reconnectAttempts.current += 1
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)
-          console.log(`🔄 Reconnecting in ${delay}ms... (Attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})`)
           
           if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current)
           }
           reconnectTimeoutRef.current = setTimeout(connect, delay)
         } else {
-          console.error('❌ Max reconnection attempts reached')
           setConnectionError('Failed to connect after multiple attempts')
         }
       }
 
       ws.onerror = (error) => {
-        console.error('❌ WebSocket error:', error)
         setConnectionError('WebSocket connection error')
         // The onclose handler will handle reconnection
       }
@@ -113,7 +104,7 @@ export function WebSocketProvider({ children }) {
       console.error('Failed to create WebSocket connection:', error)
       setConnectionError(error.message)
       
-      // Attempt reconnection
+      // Attempt reconnectionssss
       if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts.current += 1
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)

@@ -9,12 +9,13 @@ import {
   deleteProduct, toggleAvailability, uploadProductImage,
 } from '../api/products'
 import { getSettings } from '../api/settings'
+import { getCategories } from '../api/categories'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const EMPTY_FORM = {
   name: '', description: '', price: '', is_available: true,
-  category: '', variant_label: '', variant_options: '',
+  category_id: '', variant_label: '', variant_options: '',
   unit: '', upsell_text: '',
 }
 
@@ -23,8 +24,6 @@ const VARIANT_CONFIG = {
     variantLabel:        'Size / Color',
     variantPlaceholder:  'e.g. S, M, L, XL  or  Red, Blue, Green',
     unitPlaceholder:     'e.g. per piece, per pair',
-    categoryPlaceholder: 'e.g. Shoes, Dresses, Accessories',
-    upsellPlaceholder:   'e.g. Pair this with our Matching Headwrap (KES 500) for a complete look.',
     descPlaceholder:     'e.g. Hand-stitched ankara fabric, available in sizes S–XL',
     variantLabelHint:    'e.g. Size  or  Color',
     questionHint:        'what sizes / colors do you have',
@@ -33,8 +32,6 @@ const VARIANT_CONFIG = {
     variantLabel:        'Duration / Options',
     variantPlaceholder:  'e.g. 30min, 60min, 90min',
     unitPlaceholder:     'e.g. per session, per visit',
-    categoryPlaceholder: 'e.g. Hair, Nails, Massage',
-    upsellPlaceholder:   'e.g. Also suggest our Deep Conditioning Treatment (KES 800) for best results.',
     descPlaceholder:     'e.g. Deep conditioning treatment, includes scalp massage',
     variantLabelHint:    'e.g. Duration',
     questionHint:        'how long does it take',
@@ -43,13 +40,14 @@ const VARIANT_CONFIG = {
     variantLabel:        'Variant',
     variantPlaceholder:  'e.g. Small, Medium, Large',
     unitPlaceholder:     'e.g. per unit, per kg',
-    categoryPlaceholder: 'e.g. Electronics, Hardware',
-    upsellPlaceholder:   'e.g. Customers also buy our Protective Case (KES 300) with this.',
     descPlaceholder:     'e.g. Heavy-duty roofing nails, galvanised and rust-resistant',
     variantLabelHint:    'e.g. Variant',
     questionHint:        'what options do you have',
   },
 }
+// Note: categoryPlaceholder was dropped from VARIANT_CONFIG — it only
+// ever fed the old free-text category input, which is now a <select>
+// sourced from the Categories tab instead of a per-business-type hint.
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_SIZE_MB   = 2
@@ -241,12 +239,12 @@ function ProductCard({ product, onEdit, onDelete, onToggle, toggling }) {
           {product.is_available ? 'In stock' : 'Out of stock'}
         </span>
 
-        {/* Category badge */}
-        {product.category && (
+        {/* Category badge — reads the joined category name, not a raw string column */}
+        {product.category_name && (
           <span className="absolute top-3 left-3 bg-black/60 backdrop-blur-sm
                            text-white text-[10px] font-medium px-2.5 py-1
                            rounded-full uppercase tracking-wide">
-            {product.category}
+            {product.category_name}
           </span>
         )}
       </div>
@@ -368,7 +366,7 @@ function ProductCard({ product, onEdit, onDelete, onToggle, toggling }) {
 function ProductForm({
   editingProduct, form, setForm, onSave, onCancel,
   saving, uploadingImage, formError, businessType,
-  onFile, pendingImage,
+  onFile, pendingImage, categories,
 }) {
   const config = VARIANT_CONFIG[businessType] ?? VARIANT_CONFIG.retail
 
@@ -539,21 +537,36 @@ function ProductForm({
                 />
               </div>
 
-              {/* Category */}
+              {/* Category — dropdown sourced from the Categories tab.
+                  Why a <select> and not free text: every product must
+                  point at a real categories row so the WhatsApp
+                  [SHOW_CATEGORIES] flow can reliably group products;
+                  a typed string can't guarantee that. "No category" is
+                  allowed rather than forcing a choice, so an owner with
+                  zero categories yet isn't blocked from adding products —
+                  they're nudged toward the Categories tab instead. */}
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1.5">
                   Category
                 </label>
-                <input
-                  type="text"
-                  value={form.category}
-                  onChange={e => setForm({ ...form, category: e.target.value })}
-                  placeholder={config.categoryPlaceholder}
+                <select
+                  value={form.category_id}
+                  onChange={e => setForm({ ...form, category_id: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200
-                             text-sm text-slate-700 placeholder-slate-400
+                             text-sm text-slate-700
                              focus:outline-none focus:ring-2 focus:ring-amber-400
-                             focus:border-transparent"
-                />
+                             focus:border-transparent bg-white"
+                >
+                  <option value="">No category</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                {categories.length === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    No categories yet — add one from the Categories tab first.
+                  </p>
+                )}
               </div>
 
               {/* Price + Unit */}
@@ -729,6 +742,7 @@ function ProductForm({
 
 export default function Products() {
   const [products,       setProducts]       = useState(null)
+  const [categories,     setCategories]     = useState([])   // fetched from GET /categories, drives the dropdown + filter
   const [businessType,   setBusinessType]   = useState('retail')
   const [search,         setSearch]         = useState('')
   const [filterStatus,   setFilterStatus]   = useState('all')
@@ -750,15 +764,28 @@ export default function Products() {
       .catch(() => setProducts([]))
   }
 
+  function loadCategories() {
+    getCategories()
+      .then(data => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => setCategories([]))
+  }
+
   useEffect(() => {
     loadProducts()
+    loadCategories()
     getSettings()
       .then(s => setBusinessType(s?.business_type ?? 'retail'))
       .catch(() => {})
   }, [])
 
-  const config     = VARIANT_CONFIG[businessType] ?? VARIANT_CONFIG.retail
-  const categories = ['all', ...new Set((products ?? []).map(p => p.category).filter(Boolean))]
+  const config = VARIANT_CONFIG[businessType] ?? VARIANT_CONFIG.retail
+
+  // Filter-bar dropdown options come from the real categories list, not
+  // from scraping distinct strings off existing products — a category
+  // with zero products yet still shows up as a filter option, and one
+  // that's been renamed can't produce a stale/duplicate entry.
+  const categoryFilterOptions = [{ id: 'all', name: 'All categories' }, ...categories]
+
   const availCount = (products ?? []).filter(p => p.is_available).length
   const totalCount = (products ?? []).length
 
@@ -780,7 +807,7 @@ export default function Products() {
       description:     product.description     ?? '',
       price:           String(product.price),
       is_available:    product.is_available,
-      category:        product.category        ?? '',
+      category_id:     product.category_id     ?? '',
       variant_label:   product.variant_label   ?? '',
       variant_options: product.variant_options ?? '',
       unit:            product.unit            ?? '',
@@ -822,7 +849,7 @@ export default function Products() {
         description:     form.description.trim()     || null,
         price:           priceNum,
         is_available:    form.is_available,
-        category:        form.category.trim()        || null,
+        category_id:     form.category_id ? Number(form.category_id) : null,
         variant_label:   form.variant_label.trim()   || null,
         variant_options: form.variant_options.trim() || null,
         unit:            form.unit.trim()            || null,
@@ -912,13 +939,14 @@ export default function Products() {
     const q = search.toLowerCase()
     const matchSearch =
       p.name.toLowerCase().includes(q) ||
-      (p.description  ?? '').toLowerCase().includes(q) ||
-      (p.category     ?? '').toLowerCase().includes(q)
+      (p.description   ?? '').toLowerCase().includes(q) ||
+      (p.category_name ?? '').toLowerCase().includes(q)
     const matchStatus =
       filterStatus === 'all'       ? true :
       filterStatus === 'available' ? p.is_available :
       !p.is_available
-    const matchCat = filterCategory === 'all' || p.category === filterCategory
+    const matchCat =
+      filterCategory === 'all' || p.category_id === Number(filterCategory)
     return matchSearch && matchStatus && matchCat
   })
 
@@ -939,6 +967,7 @@ export default function Products() {
           businessType={businessType}
           onFile={setPendingImage}
           pendingImage={pendingImage}
+          categories={categories}
         />
       </div>
     )
@@ -1020,7 +1049,7 @@ export default function Products() {
             </button>
           ))}
 
-          {categories.length > 1 && (
+          {categoryFilterOptions.length > 1 && (
             <select
               value={filterCategory}
               onChange={e => setFilterCategory(e.target.value)}
@@ -1028,10 +1057,8 @@ export default function Products() {
                          text-slate-600 bg-white focus:outline-none
                          focus:ring-2 focus:ring-amber-400"
             >
-              {categories.map(c => (
-                <option key={c} value={c}>
-                  {c === 'all' ? 'All categories' : c}
-                </option>
+              {categoryFilterOptions.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           )}
