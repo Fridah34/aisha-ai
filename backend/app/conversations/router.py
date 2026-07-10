@@ -6,7 +6,6 @@ AUTH: user_id now comes from the authenticated session (get_current_user), never
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
-import asyncio
 
 from app.models import ConversationState, HandoverStatus, User, Customer
 from app.auth.dependencies import get_current_user

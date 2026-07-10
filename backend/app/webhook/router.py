@@ -13,9 +13,9 @@ from app.ai.service import process_customer_message    # noqa: E402
 from app.webhook.client import send_text_message     # noqa: E402
 from app.webhook.parser import extract_message_data    # noqa: E402
 from app.ai.cache import already_sent_image, mark_image_sent # noqa : E402
-from app.flows.marketplace_flow import (
+from app.flows.marketplace_flow import ( # noqa: E402
     get_or_create_marketplace_session, handle_marketplace_step, is_switch_command, reset_to_menu, get_products_for_business_category,
-    resolve_product_choice,) # noqa: E402
+    resolve_product_choice,) 
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 

@@ -5,16 +5,13 @@ from app.products.router import router as products_router
 from app.categories.router import router as categories_router
 from app.conversations.router import router as conversations_router
 from app.database import Base, engine
-from app.products.router import router as products_router
 
 # --- MOVE ALL ROUTER IMPORTS TO THE TOP HERE ---
 from app.routes.auth import router as auth_router
 from app.settings.router import router as settings_router
 from app.websocket.router import router as websocket_router
-from app.webhook.router import router as webhook_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 import os
 

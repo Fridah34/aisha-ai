@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from app.models import User, Category, Product, ConversationState
-from app.models import User, Category, Product, MarketplaceSession, Cart
+from app.models import User, Category, Product
+from app.models import MarketplaceSession, Cart
 from datetime import datetime, timedelta, timezone
 
 SESSION_TIMEOUT_MINUTES = 30
