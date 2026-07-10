@@ -10,10 +10,8 @@ from typing import Optional
 
 
 class CategoryCreate(BaseModel):
-    user_id: int
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
-    display_order: Optional[int] = None
     is_active: bool = True
 
 

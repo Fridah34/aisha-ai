@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Optional
 
 class ProductCreate(BaseModel):
-    user_id:int
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     price: Decimal = Field(..., gt=0)

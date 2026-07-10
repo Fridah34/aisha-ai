@@ -1,21 +1,21 @@
-import { apiFetch, USER_ID } from './client'
+import { apiFetch} from './client'
 
 export const getCategories = () =>
-  apiFetch(`/categories?user_id=${USER_ID}`)
+  apiFetch('/categories')
 
 export const createCategory = (data) =>
   apiFetch('/categories', {
     method: 'POST',
-    body: JSON.stringify({ ...data, user_id: USER_ID }),
+    body: JSON.stringify(data),
   })
 
 export const updateCategory = (id, data) =>
-  apiFetch(`/categories/${id}?user_id=${USER_ID}`, {
+  apiFetch(`/categories/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   })
 
 export const deleteCategory = (id) =>
-  apiFetch(`/categories/${id}?user_id=${USER_ID}`, {
+  apiFetch(`/categories/${id}`, {
     method: 'DELETE',
   })

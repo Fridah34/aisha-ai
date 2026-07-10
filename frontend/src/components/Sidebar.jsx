@@ -43,7 +43,7 @@ export default function Sidebar() {
           <Store size={16} className="text-slate-900" />
         </div>
         <div>
-          <p className="text-white font-bold text-base leading-tight">{user?.name || 'AISHA'}</p>
+          <p className="text-white font-bold text-base leading-tight">{ 'AISHA AI '}</p>
           <p className="text-amber-500 text-xs font-medium">AI Sales Assistant</p>
         </div>
       </div>

@@ -25,7 +25,7 @@ pwd_context = CryptContext(
 
 #==========JWT CONFIGURATION==============
 
-SECRET_KEY = os.getenv("SECRET_KEY","change-me-in-production-super-secret-key")
+SECRET_KEY = os.getenv("SECRET_KEY") or"change-me-in-production-super-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

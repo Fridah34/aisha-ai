@@ -34,9 +34,9 @@ def get_product_by_id(db: Session, product_id: int, user_id: int) -> Product | N
     )
 
 
-def create_product(db: Session, product_data: ProductCreate) -> Product:
+def create_product(db: Session, product_data: ProductCreate, user_id:int) -> Product:
     """Inserts a new product row and returns the created object."""
-    new_product = Product(**product_data.model_dump())
+    new_product = Product(**product_data.model_dump(), user_id=user_id)
     db.add(new_product)
     db.commit()
     db.refresh(new_product)

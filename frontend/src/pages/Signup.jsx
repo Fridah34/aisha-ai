@@ -17,6 +17,7 @@ export default function Signup() {
         password: '',
         confirmPassword: '',
         business_name: '',
+        business_type: '',
     });
     const [formError, setFormError] = useState(''); // Unified to match the visual card variables
     const [success, setSuccess] = useState('');
@@ -88,6 +89,7 @@ export default function Signup() {
         if (!formData.email.trim()) return 'Email is required';
         if (!EMAIL_REGEX.test(formData.email.trim())) return 'Please enter a valid email address';
         if (!formData.business_name.trim()) return 'Business name is required';
+        if (!formData.business_type) return 'Please select a business type';
         if (!formData.password) return 'Password is required';
         if (formData.password.length < 8) return 'Password must be at least 8 characters long';
         
@@ -119,6 +121,7 @@ export default function Signup() {
                 password: formData.password,
                 confirm_password: formData.confirmPassword, // Matches your snake_case  schema
                 business_name: formData.business_name,
+                business_type: formData.business_type,
             };
 
             const result = await signup(payload);
@@ -127,7 +130,12 @@ export default function Signup() {
             if (result?.success) {
                 setSuccess('Account created successfully! Logging you in...');
                 setTimeout(() => {
-                    navigate('/overview');
+                    navigate('/login', {
+                        replace: true,
+                        state:{
+                            message: 'Registration successful. Please sign in.'
+                        }
+                    });
                 }, 2000);
             }
         } catch (err) {
@@ -209,6 +217,25 @@ export default function Signup() {
                                     className="w-full px-4 py-2.5 bg-slate-700/60 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition disabled:opacity-60"
                                     placeholder="Your Business" required
                                 />
+                            </div>
+                        </div>
+
+                        {/* Field 4: Business Type */}
+                        <div>
+                            <label htmlFor="business_type" className="block text-sm font-medium text-slate-300 mb-1.5">Business Type</label>
+                            <div className="relative flex items-center">
+                                <select
+                                    id="business_type" name="business_type" disabled={loading} 
+                                    value={formData.business_type} onChange={handleChange}
+                                    className="w-full px-4 py-2.5 bg-slate-700/60 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition disabled:opacity-60 appearance-none"
+                                    required
+                                >
+                                    <option value="" disabled> Select your business type</option>
+                                    <option value="retail"> Retail</option>
+                                    <option value="fashion"> Fashion</option>
+                                    <option value="services"> Services</option>
+                                    <option value="food"> Food</option>
+                                </select>
                             </div>
                         </div>
 

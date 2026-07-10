@@ -47,6 +47,8 @@ app.include_router(products_router)
 app.include_router(categories_router)
 app.include_router(conversations_router)
 app.include_router(settings_router)
+app.include_router(auth_router)
+
 
 @app.get("/")
 def root():

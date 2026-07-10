@@ -8,6 +8,7 @@ from app.ai.token_utils import truncate_history_to_token_limit
 from app.models import ConversationState, HandoverStatus
 import re
 
+SWITCH_HINT = "\n\n_Reply 'menu' to browse other stores anytime._"
 SWAHILI_INDICATORS = {
         # greetings
         "habari", "mambo", "salama", "hujambo", "hamjambo",
@@ -328,8 +329,21 @@ def process_customer_message(
     state = get_or_create_conversation_state(customer.id, user_id, db)
     
     if state.status in (HandoverStatus.human_active, HandoverStatus.needs_human):
-        return {"response":None, "needs_handover": True, "ai_responded": False,
-                "customer_id": customer.id,"language":language}
+        # Previously this returned response=None, which meant every message
+        # a customer sent while waiting on a human just vanished with no
+        # reply at all — indistinguishable from the bot being broken. Now
+        # they get a consistent acknowledgment instead of silence.
+        waiting_msg = "You're connected with our team — they'll be with you shortly!"
+        save_message(
+            customer_id=customer.id,
+            user_id=user_id,
+            sender="assistant",
+            message_text=waiting_msg,
+            language=language,
+            db=db,
+        )
+        return {"response": waiting_msg, "needs_handover": True, "ai_responded": False,
+                "customer_id": customer.id, "language": language}
         
     # A new message after the owner closed it out — AI resumes.
     if state.status == HandoverStatus.resolved:
@@ -521,11 +535,3 @@ URGENT_KEYWORDS = {
     "malalamiko", "rudisha pesa", "uongo", "hasira", "mbaya sana",
     "ilinibidi", "nilidanganywa", "tatizo kubwa",
 }
-
-
-    
-    
-
-
-
-    

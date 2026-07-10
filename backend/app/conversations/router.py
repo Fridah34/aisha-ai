@@ -1,15 +1,15 @@
 """
 Conversations API — dashboard endpoints for the business owner.
 
-AUTH NOTE: user_id is passed explicitly for now.
-Replace with Depends(get_current_user) when Eve's JWT auth is ready.
+AUTH: user_id now comes from the authenticated session (get_current_user), never from the client.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 import asyncio
 
-from app.models import ConversationState, HandoverStatus, Customer
+from app.models import ConversationState, HandoverStatus, User, Customer
+from app.auth.dependencies import get_current_user
 from app.ai.service import save_message
 from app.webhook.client import send_text_message
 from app.database import get_db
@@ -19,7 +19,8 @@ from app.websocket.router import manager
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
-#helper fucntion to broadcast status changes
+
+# helper function to broadcast status changes
 async def broadcast_status_change(user_id: int, customer_id: int, new_status: str):
     """Broadcast a status change to all websocket connections of a user"""
     message = {
@@ -32,22 +33,33 @@ async def broadcast_status_change(user_id: int, customer_id: int, new_status: st
 
 
 @router.get("", response_model=list[ConversationSummary])
-def get_inbox(user_id: int, db: Session = Depends(get_db)):
-    result = crud.get_inbox(db, user_id)
-    return result
+def get_inbox(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_inbox(db, current_user.id)
 
 
 @router.get("/{customer_id}", response_model=ConversationThread)
-def get_thread(customer_id: int, user_id: int, db: Session = Depends(get_db)):
-    thread = crud.get_thread(db, customer_id, user_id)
+def get_thread(
+    customer_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    thread = crud.get_thread(db, customer_id, current_user.id)
     if not thread:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return thread
 
 
 @router.patch("/{customer_id}/takeover")
-async def takeover_conversation(customer_id: int, user_id: int, db: Session = Depends(get_db)):
+async def takeover_conversation(
+    customer_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Owner takes over — AISHA stops auto-replying."""
+    user_id = current_user.id
     state = (
         db.query(ConversationState)
         .filter_by(customer_id=customer_id, user_id=user_id)
@@ -67,15 +79,19 @@ async def takeover_conversation(customer_id: int, user_id: int, db: Session = De
         state.taken_over_at = datetime.now(timezone.utc)
     db.commit()
 
-    #Broadcast the status change
     await broadcast_status_change(user_id, customer_id, HandoverStatus.human_active.value)
 
     return {"status": state.status.value}
 
 
 @router.patch("/{customer_id}/resolve")
-async def resolve_conversation(customer_id: int, user_id: int, db: Session = Depends(get_db)):
+async def resolve_conversation(
+    customer_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Owner marks done — AISHA resumes on next customer message."""
+    user_id = current_user.id
     state = (
         db.query(ConversationState)
         .filter_by(customer_id=customer_id, user_id=user_id)
@@ -87,7 +103,6 @@ async def resolve_conversation(customer_id: int, user_id: int, db: Session = Dep
     state.resolved_at = datetime.now(timezone.utc)
     db.commit()
 
-    # Broadcast the status change
     await broadcast_status_change(user_id, customer_id, HandoverStatus.resolved.value)
 
     return {"status": state.status.value}
@@ -96,8 +111,8 @@ async def resolve_conversation(customer_id: int, user_id: int, db: Session = Dep
 @router.post("/{customer_id}/reply")
 def send_manual_reply(
     customer_id: int,
-    user_id: int,
     payload: dict,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Owner sends a message directly to customer via Twilio, bypassing AISHA."""
@@ -105,7 +120,11 @@ def send_manual_reply(
     if not text:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == customer_id, Customer.user_id == current_user.id)
+        .first()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
@@ -118,7 +137,7 @@ def send_manual_reply(
     # Always save to DB so the thread stays accurate
     save_message(
         customer_id=customer_id,
-        user_id=user_id,
+        user_id=current_user.id,
         sender="human",
         message_text=text,
         language="en",

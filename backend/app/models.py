@@ -6,6 +6,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    JSON,
     Numeric,
     Integer,
     Numeric,
@@ -16,7 +17,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy import UniqueConstraint
 
 class OrderStatus(enum.Enum):
     pending = "pending"
@@ -34,6 +34,12 @@ class MessageSender(enum.Enum):
 class SupportedLanguages(enum.Enum):
     en = "en"
     sw = "sw"
+    
+class BusinessType(enum.Enum):
+    retail = "retail"
+    fashion = "fashion"
+    services = "services"
+    food = "food"
 
 class User(Base):
     __tablename__ = "users"
@@ -46,8 +52,8 @@ class User(Base):
     business_name = Column(String(150), nullable=False)
     is_active = Column(Boolean, default=True)
     knowledge_base_text = Column(Text, nullable=True)
-    business_type = Column(String(20), default="retail", nullable=True)
-    conversation_states = relationship("ConversationState", back_populates="business_owner")
+    business_type = Column(EnumSQL(BusinessType), nullable=False)
+    
     # server_default=func.now() means PostgreSQL sets this automatically
     # More reliable than setting it in Python because it uses the
     # database server's clock, not your machine's clock
@@ -59,7 +65,7 @@ class User(Base):
     products = relationship("Product", back_populates="owner")
     orders = relationship("Order", back_populates="business_owner")
     conversations = relationship("Conversation", back_populates="business_owner")
-    conversation_states = relationship("ConversationState", back_populates="business_owner")
+    conversation_states = relationship("ConversationState", back_populates="business_owner", foreign_keys="ConversationState.user_id",)
     #new: one business has many customers
     customers = relationship("Customer", back_populates="business_owner")
     #One business has many categories
@@ -163,7 +169,6 @@ class Conversation(Base):
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(
         Integer,
-
         ForeignKey("customers.id", ondelete="CASCADE"),
         nullable=False
     )
@@ -214,7 +219,7 @@ class ConversationState(Base):
     selected_category_id = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
 
     customer = relationship("Customer", back_populates="conversation_states")
-    business_owner = relationship("User", back_populates="conversation_states")
+    business_owner = relationship("User", back_populates="conversation_states", foreign_keys=[user_id],)
 
 class MarketplaceSession(Base):
     __tablename__ = "marketplace_sessions"
@@ -225,6 +230,20 @@ class MarketplaceSession(Base):
     selected_business_type = Column(String(50), nullable=True)
     selected_business_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+class Cart(Base):
+    __tablename__ = "carts"
+    __table_args__ = (
+        UniqueConstraint("phone_number", "business_id", name="uq_cart per_business"),   
+    )
+    
+    id = Column(Integer, primary_key=True, index=True)
+    phone_number = Column(String(20), index=True, nullable=False)
+    business_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    items = Column(JSON, default=list, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    
 class Order(Base):
     __tablename__ = "orders"
 

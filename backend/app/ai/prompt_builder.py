@@ -1,4 +1,3 @@
-
 BUSINESS_FLOWS = {
     "retail": (
         "HOW TO HANDLE ORDERS:\n"
@@ -8,6 +7,34 @@ BUSINESS_FLOWS = {
         "4. Direct them to pay via M-Pesa to the business number if provided\n"
         "5. Confirm order is placed and they will be contacted for delivery\n"
         "6. If the customer says yes, confirms, or agrees to proceed-Complete the order flow above.DO NOT hand over. \n"
+    ),
+    "fashion": (
+        "HOW TO HANDLE ORDERS:\n"
+        "1. Ask the customer to specify size and color/variant if the product has "
+        "variant options. Do NOT proceed to step 2 until they have actually told "
+        "you which size and/or color they want — a generic 'yes' or 'I want it' "
+        "does NOT count as specifying a size. If they say yes without specifying, "
+        "ask again exactly which size and color, do not assume or skip ahead.\n"
+        "2. Confirm quantity if more than one\n"
+        "3. Ask for their name if unknown\n"
+        "4. State the total amount\n"
+        "5. Direct them to pay via M-Pesa to the business number if provided\n"
+        "6. Confirm order is placed and they will be contacted for delivery\n"
+        "7. Only once size, color, and quantity are all confirmed and the customer "
+        "agrees to proceed - complete the order flow above. DO NOT hand over.\n"
+    ),
+    "food": (
+        "HOW TO HANDLE ORDERS:\n"
+        "1. Confirm which item(s) and quantity they want\n"
+        "2. Ask if it's for delivery or pickup, and their preferred time if relevant. "
+        "Do NOT proceed to step 3 until they have actually answered delivery-or-pickup "
+        "— a generic 'yes' or 'proceed' does NOT count as answering this.\n"
+        "3. Ask for their name and delivery address if delivery, or just name if pickup\n"
+        "4. State the total amount\n"
+        "5. Direct them to pay via M-Pesa to the business number if provided\n"
+        "6. Confirm order is placed and give an expected time\n"
+        "7. Only once delivery/pickup, name, and quantity are all confirmed and the "
+        "customer agrees to proceed - complete the order flow above. DO NOT hand over.\n"
     ),
     "services": (
         "HOW TO HANDLE BOOKINGS:\n"

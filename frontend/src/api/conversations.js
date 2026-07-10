@@ -1,14 +1,19 @@
-import { apiFetch, USER_ID } from './client'
+import { apiFetch } from './client'
 
 export const getInbox = () =>
-   apiFetch(`/conversations?user_id=${USER_ID}`)
+   apiFetch('/conversations')
+
 export const getThread = (customerId) =>
-   apiFetch(`/conversations/${customerId}?user_id=${USER_ID}`)
+   apiFetch(`/conversations/${customerId}`)
+
 export const takeOver = (customerId)   =>
-  apiFetch(`/conversations/${customerId}/takeover?user_id=${USER_ID}`, { method: 'PATCH' })
-export const resolve = (customerId)   => apiFetch(`/conversations/${customerId}/resolve?user_id=${USER_ID}`, { method: 'PATCH' })
+  apiFetch(`/conversations/${customerId}/takeover`, { method: 'PATCH' })
+
+export const resolve = (customerId)   => 
+  apiFetch(`/conversations/${customerId}/resolve`, { method: 'PATCH' })
+
 export const sendReply   = (customerId, message) =>
-  apiFetch(`/conversations/${customerId}/reply?user_id=${USER_ID}`, {
+  apiFetch(`/conversations/${customerId}/reply`, {
     method: 'POST',
     body: JSON.stringify({ message }),
   })

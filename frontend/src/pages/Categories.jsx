@@ -6,7 +6,7 @@ import {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { name: '', description: '',  is_active: true }
+const EMPTY_FORM = { name: '', description: '', is_active: true }
 
 // ── Reusable Toggle component ─────────────────────────────────────────────────
 // Duplicated from Products.jsx rather than imported — it's a small, self-
@@ -42,6 +42,10 @@ function Toggle({ on, onToggle, disabled = false }) {
 // Modal, not a full-page form like ProductForm — categories have four simple
 // fields (name, description, order, active) vs Products' nine-plus-image-
 // upload, so a modal keeps the interaction fast without leaving the list.
+//
+// Display order is only shown when editing — on create, the backend
+// computes it automatically (new categories land at the end of the list),
+// so there's nothing meaningful for the owner to set at that point.
 
 function CategoryModal({ editingCategory, form, setForm, onSave, onCancel, saving, formError }) {
   return (
@@ -96,24 +100,26 @@ function CategoryModal({ editingCategory, form, setForm, onSave, onCancel, savin
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1.5">
-              Display order
-            </label>
-            <input
-              type="number"
-              value={form.display_order}
-              onChange={e => setForm({ ...form, display_order: e.target.value })}
-              min="0"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200
-                         text-sm text-slate-700
-                         focus:outline-none focus:ring-2 focus:ring-amber-400
-                         focus:border-transparent"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">
-              Lower numbers appear first in the WhatsApp category list.
-            </p>
-          </div>
+          {editingCategory && (
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                Display order
+              </label>
+              <input
+                type="number"
+                value={form.display_order}
+                onChange={e => setForm({ ...form, display_order: e.target.value })}
+                min="0"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200
+                           text-sm text-slate-700
+                           focus:outline-none focus:ring-2 focus:ring-amber-400
+                           focus:border-transparent"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Lower numbers appear first in the WhatsApp category list.
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-1">
             <div>
@@ -263,6 +269,8 @@ export default function Categories() {
     setSaving(true)
     setFormError(null)
 
+    // display_order is only ever sent on edit — the backend computes it
+    // automatically on create, so there's nothing to include there.
     const payload = {
       name: form.name.trim(),
       description: form.description.trim() || null,

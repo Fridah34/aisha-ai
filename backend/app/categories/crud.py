@@ -7,7 +7,7 @@ def get_categories_for_business(db: Session, user_id: int) -> list[dict]:
     """
     Returns every category for one business, ordered for display, each
     annotated with a live product_count.
- 
+
     Uses a single grouped query (outerjoin + count) rather than looping
     over categories and calling len(category.products) per row — the
     same N+1 pitfall already hit and fixed once in
@@ -21,7 +21,7 @@ def get_categories_for_business(db: Session, user_id: int) -> list[dict]:
         .order_by(Category.display_order, Category.name)
         .all()
     )
- 
+
     return [
         {
             "id": category.id,
@@ -35,8 +35,8 @@ def get_categories_for_business(db: Session, user_id: int) -> list[dict]:
         }
         for category, count in rows
     ]
- 
- 
+
+
 def get_category_by_id(db: Session, category_id: int, user_id: int) -> Category | None:
     """
     Fetches a single category, scoped to the owning business — same
@@ -47,23 +47,28 @@ def get_category_by_id(db: Session, category_id: int, user_id: int) -> Category 
         .filter(Category.id == category_id, Category.user_id == user_id)
         .first()
     )
- 
- 
-def create_category(db: Session, category_data: CategoryCreate) -> Category:
+
+
+def create_category(db: Session, category_data: CategoryCreate, user_id: int) -> Category:
     """
-    Inserts a new category row. display_order is always computed,even if the client sent one - new categories always land at the end of the list without the owner needing to know the current highest.
+    Inserts a new category row for the authenticated business.
+    user_id comes from the caller (the authenticated session), never
+    from category_data, and display_order is always computed — new
+    categories always land at the end of the list without the owner
+    needing to know the current highest.
     """
-    data = category_data.model_dump(exclude={"display_order"})
+    data = category_data.model_dump(exclude={"display_order", "user_id"}, exclude_unset=True)
     new_category = Category(
         **data,
-        display_order=get_next_display_order(db, category_data.user_id),
-        )
+        user_id=user_id,
+        display_order=get_next_display_order(db, user_id),
+    )
     db.add(new_category)
     db.commit()
     db.refresh(new_category)
     return new_category
- 
- 
+
+
 def update_category(
     db: Session,
     category: Category,
@@ -73,12 +78,12 @@ def update_category(
     update_data = updates.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(category, field, value)
- 
+
     db.commit()
     db.refresh(category)
     return category
- 
- 
+
+
 def delete_category(db: Session, category: Category) -> None:
     """
     Deletes a category. Products in it are NOT deleted — category_id
@@ -87,17 +92,18 @@ def delete_category(db: Session, category: Category) -> None:
     """
     db.delete(category)
     db.commit()
-    
-def  get_next_display_order(db: Session, user_id:int) -> int:
+
+
+def get_next_display_order(db: Session, user_id: int) -> int:
     """
-    Returns one more than the business's current highest display_order, 
+    Returns one more than the business's current highest display_order,
     or 0 if they have no categories yet. Same reasoning as get_inbox()'s
-    fix - derive from actual DB State instead of trusting caller input.
+    fix — derive from actual DB state instead of trusting caller input.
     """
     max_order = (
         db.query(func.max(Category.display_order))
         .filter(Category.user_id == user_id)
         .scalar()
     )
-    return 0 if max_order is None else max_order +1
- 
+    return 0 if max_order is None else max_order + 1
+
