@@ -55,7 +55,7 @@ def get_all_categories(db: Session) -> list[str]:
     top-level 'what are you looking for' menu, replacing business_type."""
     rows = (
         db.query(Category.name)
-        .filter(Category.is_active == True)
+        .filter(Category.is_active)
         .distinct()
         .all()
     )
@@ -68,8 +68,8 @@ def get_businesses_by_category(db: Session, category_name: str) -> list[User]:
         .join(Category, Category.user_id == User.id)
         .filter(
             Category.name == category_name,
-            Category.is_active == True,
-            User.is_active == True,
+            Category.is_active,
+            User.is_active,
         )
         .distinct()
         .all()
@@ -79,7 +79,7 @@ def get_businesses_by_category(db: Session, category_name: str) -> list[User]:
 def get_categories_for_business(db: Session, user_id:int) -> list[Category]:
     return (
         db.query(Category)
-        .filter(Category.user_id == user_id, Category.is_active == True)
+        .filter(Category.user_id == user_id, Category.is_active)
         .order_by(Category.display_order)
         .all()
     )
@@ -87,7 +87,7 @@ def get_categories_for_business(db: Session, user_id:int) -> list[Category]:
 def get_products_for_category(db: Session, user_id: int, category_id: int) -> list[Product]:
     return (
         db.query(Product)
-        .filter(Product.user_id == user_id, Product.category_id == category_id, Product.is_available == True)
+        .filter(Product.user_id == user_id, Product.category_id == category_id, Product.is_available)
         .all()
     )
     
@@ -101,7 +101,7 @@ def get_products_for_business_category(db: Session, business_id: int, category_n
         .filter(
             Category.user_id == business_id,
             Category.name == category_name,
-            Category.is_active == True,
+            Category.is_active,
         )
         .first()
     )
