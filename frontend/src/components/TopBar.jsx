@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, User, Bell, ChevronDown, LogOut, Menu } from 'lucide-react'
+import { Settings, User, Bell, ChevronDown, LogOut, } from 'lucide-react'
 import { getSettings } from '../api/settings'
+import { useAuth } from '../hooks/useAuth'
 
-export default function TopBar({ onHamburger }) {
+export default function TopBar() {
   const navigate      = useNavigate()
+  const { logout }   = useAuth()
   const [open, setOpen]   = useState(false)
   const [owner, setOwner] = useState(null)
   const dropdownRef       = useRef(null)
@@ -34,14 +36,6 @@ export default function TopBar({ onHamburger }) {
       {/* Left — hamburger on mobile, AISHA title always */}
       <div className="flex items-center gap-3">
         {/* Hamburger — only visible on mobile */}
-        <button
-          onClick={onHamburger}
-          className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100
-                     transition-colors"
-          aria-label="Open menu"
-        >
-          <Menu size={20} />
-        </button>
 
         <div className="flex items-center gap-2">
           <span className="text-amber-500 font-bold text-xl tracking-wide">AISHA</span>
@@ -121,7 +115,7 @@ export default function TopBar({ onHamburger }) {
 
               <div className="border-t border-slate-100 mt-1 pt-1">
                 <button
-                  onClick={() => alert('AUTH NOTE: wire to Eve\'s JWT logout endpoint')}
+                  onClick={logout} // FIXED: Wipes browser cache strings and forces clean redirects instantly
                   className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm
                              text-red-500 hover:bg-red-50 transition-colors"
                 >

@@ -54,7 +54,13 @@ def get_business_prompt(user_id: int, db: Session) -> str:
             "name": p.name,
             "price": float(p.price),
             "is_available": p.is_available,
-            "description": p.description
+            "description": p.description,
+            "category": p.category,
+            "variant_label": p.variant_label,
+            "variant_options": p.variant_options,
+            "unit": p.unit,
+            "upsell_text":p.upsell_text,   # ← new
+            "image_url":p.image_url,  
         }
         for p in products
     ]
@@ -390,7 +396,7 @@ URGENT_KEYWORDS = {
     "malalamiko", "rudisha pesa", "uongo", "hasira", "mbaya sana",
     "ilinibidi", "nilidanganywa", "tatizo kubwa",
 }
-    
+
 
     
     
