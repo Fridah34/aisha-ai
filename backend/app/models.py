@@ -29,7 +29,7 @@ class MessageSender(enum.Enum):
     assistant = "assistant"
     human = "human"
 
-#supported languages  en for ennglish, sw for swahili and sng for sheng'
+#supported languages  en for english, sw for swahili 
 class SupportedLanguages(enum.Enum):
     en = "en"
     sw = "sw"
