@@ -176,7 +176,7 @@ class KnowledgeBaseManager:
         business_id: uuid.UUID,
         merchant_name: str,
         customer_message: str,
-        retrieval_limit: int = DEFAULT_RETRIEVAL_LIMIT,  # FIXED: Typo corrected (retretrieval_limit)
+        retrieval_limit: int = DEFAULT_RETRIEVAL_LIMIT,  # FIXED: Typo corrected (retrieval_limit)
         conversation_limit: int = DEFAULT_CONVERSATION_LIMIT,
     ) -> PromptPayload:
         """Assembles unified, secure context bundles on-the-fly during customer WhatsApp chats."""
