@@ -672,7 +672,7 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
             db.commit()
             db.refresh(customer)
 
-        summary_before_clear = format_cart_summary(cart)
+        #summary_before_clear = format_cart_summary(cart)
         orders = create_orders_from_cart(cart, business, customer, name, contact, db)
 
         cart.items = []
