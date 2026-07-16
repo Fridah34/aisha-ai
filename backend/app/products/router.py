@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends,HTTPException,status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.auth.dependencies import get_current_user
 from app.products import crud
 from app.products.schemas import ProductCreate, ProductUpdate, ProductResponse
 from app.ai.cache import invalidate_business_cache
-from app.models import Product 
+from app.models import Product , User
 
 import uuid
 import os
@@ -23,23 +24,34 @@ ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_SIZE_BYTES = 2 * 1024 * 1024
 
 @router.get("", response_model=list[ProductResponse])
-def list_products(user_id: int, db: Session = Depends(get_db)):
+def list_products(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Returns every product for one business
     """
-    return crud.get_products_for_business(db, user_id)
+    return crud.get_products_for_business(db, current_user.id)
 
 @router.get("/{product_id}", response_model=ProductResponse)
-def get_product(product_id: int, user_id: int, db: Session = Depends(get_db)):
+def get_product(
+    product_id: int, 
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    ):
     """Returns one product, scoped to the owning business."""
-    product = crud.get_product_by_id(db, product_id, user_id)
+    product = crud.get_product_by_id(db, product_id, current_user.id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
  
  
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
-def add_product(product_data: ProductCreate, db: Session = Depends(get_db)):
+def add_product(
+    product_data: ProductCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    ):
     """
     Creates a new product.
  
@@ -47,16 +59,16 @@ def add_product(product_data: ProductCreate, db: Session = Depends(get_db)):
     without this, AISHA would keep telling customers about the
     old product list for up to an hour (the cache TTL).
     """
-    new_product = crud.create_product(db, product_data)
-    invalidate_business_cache(product_data.user_id)
+    new_product = crud.create_product(db, product_data, current_user.id)
+    invalidate_business_cache(current_user.id)
     return new_product
  
  
 @router.put("/{product_id}", response_model=ProductResponse)
 def edit_product(
     product_id: int,
-    user_id: int,
     updates: ProductUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -64,30 +76,34 @@ def edit_product(
     Invalidates the business prompt cache so AISHA reflects the
     change on the very next customer message.
     """
-    product = crud.get_product_by_id(db, product_id, user_id)
+    product = crud.get_product_by_id(db, product_id, current_user.id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
  
     updated = crud.update_product(db, product, updates)
-    invalidate_business_cache(user_id)
+    invalidate_business_cache(current_user.id)
     return updated
  
  
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_product(product_id: int, user_id: int, db: Session = Depends(get_db)):
+def remove_product(
+    product_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Deletes a product and invalidates the cache."""
-    product = crud.get_product_by_id(db, product_id, user_id)
+    product = crud.get_product_by_id(db, product_id, current_user.id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
  
     crud.delete_product(db, product)
-    invalidate_business_cache(user_id)
+    invalidate_business_cache(current_user.id)
     return None
 
 @router.post("/{product_id}/image")
 async def upload_product_image(
     product_id : int,
-    user_id : int,
+    current_user: User = Depends(get_current_user),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
@@ -116,7 +132,7 @@ async def upload_product_image(
     #save to disk
     ext = file.filename.rsplit(".", 1)[-1].lower()
     filename = f"{product_id}_{uuid.uuid4().hex[:8]}.{ext}"
-    folder = f"uploads/products/{user_id}"
+    folder = f"uploads/products/{current_user.id}"
     os.makedirs(folder, exist_ok=True)
     filepath = f"{folder}/{filename}"
     
@@ -126,7 +142,7 @@ async def upload_product_image(
     #Save URL to DB
     product = db.query(Product).filter(
         Product.id == product_id,
-        Product.user_id == user_id
+        Product.user_id == current_user.id
     ).first()
     if not product:
         raise HTTPException(404, "Product not found")

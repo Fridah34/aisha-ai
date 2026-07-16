@@ -1,7 +1,9 @@
 import redis
 import json
 import os
+import hashlib
 from dotenv import load_dotenv
+from app.ai.prompt_builder import build_system_prompt
 
 load_dotenv()
 
@@ -20,6 +22,16 @@ except Exception as e:
     print(f"Redis not available: {e} - running without cache")
     REDIS_AVAILABLE = False
     redis_client = None
+    
+# ─── PROMPT VERSIONING ─────────────────────────────────────────────────────
+# Hashes the actual bytecode of build_system_prompt so any edit to that
+# function automatically produces a new cache key. Old keys for the previous
+# version simply become orphaned and are never read again — no manual
+# `DEL business_prompt:<id>` needed after every prompt change, and no risk
+# of silently serving a stale prompt for up to an hour after a code edit.
+def get_prompt_version() -> str:
+    return hashlib.md5(build_system_prompt.__code__.co_code).hexdigest()[:8]
+
     
 # ─── BUSINESS PROMPT CACHE ────────────────────────────────────────────────────
 # The business prompt contains the business name, all products,
@@ -70,7 +82,7 @@ def invalidate_business_cache(user_id: int):
     try:
         key = f"business_prompt:{user_id}"
         redis_client.delete(key)
-        print(f"✓ Cache invalidated for business {user_id}")
+        print(f"Cache invalidated for business {user_id}")
     except Exception as e:
         print(f"Redis delete error: {e}")
         
@@ -118,7 +130,7 @@ def cache_conversation(
     customer_id: int,
     user_id: int,
     history: list,
-    ttl_seconds: int = 86400
+    ttl_seconds: int = 3600
 ):
     """
     Stores conversation history in Redis for 2 hours.
@@ -165,7 +177,7 @@ def append_to_conversation_cache(
     customer_id: int,
     user_id: int,
     message: dict,
-    ttl_seconds: int = 86400
+    ttl_seconds: int = 3600
 ):
     """
     Adds one message to the cached conversation.

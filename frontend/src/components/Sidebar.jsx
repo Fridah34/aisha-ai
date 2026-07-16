@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Package,
-  Settings, LogOut, Store,
+  Settings, LogOut, Store,Tags,
 } from 'lucide-react'
 import { getSettings } from '../api/settings'
 import { useAuth } from '../hooks/useAuth'
@@ -11,6 +11,7 @@ const links = [
   { to: '/overview',      label: 'Overview',      icon: LayoutDashboard },
   { to: '/conversations', label: 'Conversations', icon: MessageSquare },
   { to: '/products',      label: 'Products',      icon: Package },
+  { to: '/categories',      label: 'Categories',      icon: Tags },
   { to: '/settings',      label: 'Settings',      icon: Settings },
 ]
 
@@ -42,7 +43,7 @@ export default function Sidebar() {
           <Store size={16} className="text-slate-900" />
         </div>
         <div>
-          <p className="text-white font-bold text-base leading-tight">{user?.name || 'AISHA'}</p>
+          <p className="text-white font-bold text-base leading-tight">{ 'AISHA AI '}</p>
           <p className="text-amber-500 text-xs font-medium">AI Sales Assistant</p>
         </div>
       </div>

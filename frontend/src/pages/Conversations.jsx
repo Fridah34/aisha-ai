@@ -4,6 +4,7 @@ import {
   UserCheck, CheckCircle, Send, Bot, User
 } from 'lucide-react'
 import { getInbox, getThread, takeOver, resolve, sendReply } from '../api/conversations'
+import { useWebSocket  } from '../context/WebSocketContext'
 
 const HANDOVER_PHRASE = 'Let me connect you with our team'
 
@@ -98,21 +99,99 @@ export default function Conversations() {
   const [sending,         setSending]         = useState(false)
   const [replyError,      setReplyError]      = useState(null)
   const [actionLoading,   setActionLoading]   = useState(false)
-  const [failedMessageIds, setFailedMessageIds] = useState(new Set())
+  const { isConnected, lastMessage, sendMessage } = useWebSocket()
 
   const threadEndRef = useRef(null)
   const replyRef     = useRef(null)
 
-  // Load inbox on mount
-  useEffect(() => {
+  const loadInbox = () => {
     getInbox()
       .then((data) => {
         const list = Array.isArray(data) ? data : []
         setInbox(list)
-        if (list.length > 0) openThread(list[0])
+        // Update statuses from the loaded data
+        const newStatuses = {}
+        list.forEach(c => {
+          newStatuses[c.customer_id] = c.conversation_status || 'ai_active'
+        })
+        setStatuses(prev => ({ ...prev, ...newStatuses }))
+        if (list.length > 0 && !selected) {
+          openThread(list[0])
+        }
       })
       .catch(() => setInbox([]))
+  }
+
+  // Load inbox on mount
+  useEffect(() => {
+    loadInbox()
   }, [])
+
+  // 👇 Listen for WebSocket status changes
+  useEffect(() => {
+    if (lastMessage?.type === 'status_change') {
+      const { customer_id, new_status } = lastMessage
+      
+      // Update status in local state
+      setStatuses(prev => ({
+        ...prev,
+        [customer_id]: new_status
+      }))
+      
+      // If this is the selected conversation, update its status
+      if (selected?.customer_id === customer_id) {
+        setSelected(prev => prev ? {
+          ...prev,
+          conversation_status: new_status
+        } : null)
+      }
+      
+      // Refresh inbox in background
+      getInbox()
+        .then(data => {
+          const list = Array.isArray(data) ? data : []
+          setInbox(list)
+        })
+        .catch(() => {})
+    }
+    
+    if (lastMessage?.type === 'new_message') {
+      // If this is the selected conversation, refresh the thread
+      if (selected?.customer_id === lastMessage.customer_id) {
+        refreshThread()
+      }
+    }
+  }, [lastMessage])
+
+  // Listen for custom events as backup
+  useEffect(() => {
+    const handleStatusChange = (event) => {
+      const { customerId, newStatus } = event.detail
+      setStatuses(prev => ({
+        ...prev,
+        [customerId]: newStatus
+      }))
+      if (selected?.customer_id === customerId) {
+        setSelected(prev => prev ? {
+          ...prev,
+          conversation_status: newStatus
+        } : null)
+      }
+    }
+
+    const handleNewMessage = (event) => {
+      if (selected?.customer_id === event.detail.customerId) {
+        refreshThread()
+      }
+    }
+
+    window.addEventListener('conversation_status_change', handleStatusChange)
+    window.addEventListener('new_conversation_message', handleNewMessage)
+    return () => {
+      window.removeEventListener('conversation_status_change', handleStatusChange)
+      window.removeEventListener('new_conversation_message', handleNewMessage)
+    }
+  }, [selected])
 
   // Scroll to bottom whenever thread updates
   useEffect(() => {
@@ -138,6 +217,21 @@ export default function Conversations() {
       .finally(() => setLoadingThread(false))
   }
 
+  const refreshThread = () => {
+    if (!selected) return
+    setLoadingThread(true)
+    getThread(selected.customer_id)
+      .then((data) => {
+        setThread(data)
+        setStatuses(prev => ({
+          ...prev,
+          [selected.customer_id]: data.conversation_status ?? 'ai_active',
+        }))
+      })
+      .catch(() => setThread(null))
+      .finally(() => setLoadingThread(false))
+  }
+
   async function handleTakeOver() {
     if (!selected) return
     setActionLoading(true)
@@ -157,8 +251,6 @@ export default function Conversations() {
     try {
       await resolve(selected.customer_id)
       setStatuses(prev => ({ ...prev, [selected.customer_id]: 'resolved' }))
-      const updated = await getInbox()
-      setInbox(Array.isArray(updated) ? updated : [])
     } catch (e) {
       console.error('Resolve failed', e)
     } finally {
@@ -175,8 +267,7 @@ export default function Conversations() {
       setReplyText('')
 
       // Refresh thread to show the new human message
-      const updated = await getThread(selected.customer_id)
-      setThread(updated)
+      await refreshThread()
       setTimeout(() => threadEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
 
       // If Twilio failed, mark that message bubble and show banner
@@ -209,6 +300,10 @@ export default function Conversations() {
 
   return (
     <div className="flex h-full overflow-hidden">
+      {/* WebSocket Connection Status - Optional */}
+      <div className={`absolute top-0 right-0 m-4 px-2 py-1 rounded text-xs ${isConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+        {isConnected ? '🟢 Live' : '🔴 Reconnecting...'}
+      </div>
 
       {/* ── LEFT: Inbox ───────────────────────────────────────────── */}
       <aside className="w-80 shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-hidden">
@@ -231,7 +326,7 @@ export default function Conversations() {
             inbox.map((c) => {
               const active = selected?.customer_id === c.customer_id
               const status = statuses[c.customer_id] ??
-                (c.last_message?.includes(HANDOVER_PHRASE) ? 'needs_human' : 'ai_active')
+                c.conversation_status ?? 'ai_active'
               return (
                 <button
                   key={c.customer_id}

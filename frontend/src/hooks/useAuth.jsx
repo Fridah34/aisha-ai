@@ -77,15 +77,6 @@ const signup = useCallback(async (credentials) => {
             withCredentials: true,
         });
 
-        //if the backend automatically logs the user in on signup and returns  a token save it
-        if (data.access_token) {
-            setToken(data.access_token);
-            setUser(data.user);
-            localStorage.setItem('user', JSON.stringify(data.user));
-        } else if (data.user) {
-            setUser(data.user);
-            localStorage.setItem('user', JSON.stringify(data.user));
-        }
         return{ success: true, user: data.user || data };
     } catch (err) {
         const errorMessage = parseFastApiError(err, 'Signup failed');

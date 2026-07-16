@@ -6,8 +6,8 @@ These two fields directly control how AISHA behaves:
 - knowledge_base_text: injected into every prompt as business context
 - business_type: selects the action flow (retail / services / general)
 
-AUTH NOTE: user_id passed explicitly for now.
-Replace with Depends(get_current_user) when Eve's JWT auth is ready.
+AUTH: user_id now comes from the authenticated session (get_current_user),
+never from the client.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from typing import Optional
 
 from app.database import get_db
 from app.models import User
+from app.auth.dependencies import get_current_user
 from app.ai.cache import invalidate_business_cache
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -37,19 +38,16 @@ class SettingsResponse(BaseModel):
 
 
 @router.get("", response_model=SettingsResponse)
-def get_settings(user_id: int, db: Session = Depends(get_db)):
-    """Returns current settings for the business."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Business not found")
-    return user
+def get_settings(current_user: User = Depends(get_current_user)):
+    """Returns current settings for the authenticated business."""
+    return current_user
 
 
 @router.patch("", response_model=SettingsResponse)
 def update_settings(
-    user_id: int,
     updates: SettingsUpdate,
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Updates knowledge base and/or business type.
@@ -59,12 +57,8 @@ def update_settings(
     PATCH not PUT — only the fields sent are updated,
     everything else is left untouched.
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Business not found")
-
     if updates.knowledge_base_text is not None:
-        user.knowledge_base_text = updates.knowledge_base_text
+        current_user.knowledge_base_text = updates.knowledge_base_text
 
     if updates.business_type is not None:
         valid_types = {"retail", "services", "general"}
@@ -73,12 +67,11 @@ def update_settings(
                 status_code=400,
                 detail=f"business_type must be one of: {valid_types}"
             )
-        user.business_type = updates.business_type
+        current_user.business_type = updates.business_type
 
     db.commit()
-    db.refresh(user)
+    db.refresh(current_user)
 
-    # Invalidate cache — AISHA rebuilds prompt on next message
-    invalidate_business_cache(user_id)
+    invalidate_business_cache(current_user.id)
 
-    return user
+    return current_user

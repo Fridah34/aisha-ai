@@ -22,6 +22,12 @@ class MessageSender(str, Enum):
 class SupportedLanguages(str, Enum):
     en = "en"
     sw = "sw"
+    
+class BusinessType(str, Enum):
+    retail = "retail"
+    fashion = "fashion"
+    services = "services"
+    food = "food"
 
 # ==========USER SCHEMAS==========
 
@@ -31,6 +37,7 @@ class UserRegister(BaseModel):
     password: str = Field(min_length=8, max_length=100, description="Password with a minimum of 8 characters")
     confirm_password: str = Field(..., min_length=8, max_length=100, description="Password confirmation")
     business_name: str = Field(min_length=1, max_length=150, description="Business name")
+    business_type: BusinessType = Field(description="Type of business")
 
     #  This checks that both fields match automatically!
     @model_validator(mode="after")
@@ -67,7 +74,8 @@ class UserRegister(BaseModel):
                 "email": "eve.mipata@example.com",
                 "password": "securepassword",
                 "confirm_password": "securepassword",
-                "business_name": "Eve's Business"
+                "business_name": "Eve's Business",
+                "business_type": "retail"
             }
         }
     }
