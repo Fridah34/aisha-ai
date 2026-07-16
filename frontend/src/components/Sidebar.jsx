@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Package,
-  Settings, LogOut, Store,Tags,
+  Settings, LogOut, Store,Tags,ShoppingCart
 } from 'lucide-react'
 import { getSettings } from '../api/settings'
 import { useAuth } from '../hooks/useAuth'
@@ -12,6 +12,7 @@ const links = [
   { to: '/conversations', label: 'Conversations', icon: MessageSquare },
   { to: '/products',      label: 'Products',      icon: Package },
   { to: '/categories',      label: 'Categories',      icon: Tags },
+  { to: '/orders',      label: 'Orders',      icon: ShoppingCart },
   { to: '/settings',      label: 'Settings',      icon: Settings },
 ]
 
