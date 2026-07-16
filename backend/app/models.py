@@ -1,5 +1,4 @@
 import enum
-import uuid
 
 from app.database import Base
 from sqlalchemy import (
