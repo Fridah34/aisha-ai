@@ -30,6 +30,7 @@ class ConversationSummary(BaseModel):
     last_message: str
     last_message_time: datetime
     total_messages: int
+    conversation_status : str
     
 class ConversationThread(BaseModel):
     """

@@ -10,12 +10,11 @@ from datetime import datetime
 from typing import Optional
 
 class ProductCreate(BaseModel):
-    user_id:int
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     price: Decimal = Field(..., gt=0)
     is_available:bool =True
-    category: Optional[str ] = None
+    category_id: Optional[int ] = None
     variant_label: Optional[str ] = None
     variant_options: Optional[str ] = None
     unit: Optional[str ] = None
@@ -28,7 +27,7 @@ class ProductUpdate(BaseModel):
     description: Optional[str] = None
     price: Optional[Decimal] = Field(None, gt=0)
     is_available: Optional[bool] = None
-    category: Optional[str ] = None
+    category_id: Optional[int ] = None
     variant_label: Optional[str ] = None
     variant_options: Optional[str ] = None
     unit: Optional[str ] = None
@@ -46,7 +45,8 @@ class ProductResponse(BaseModel):
     description: Optional[str]
     price: Decimal
     is_available: bool
-    category: Optional[str] = None
+    category_name: Optional[str] = None
+    category_id: Optional[int] = None
     variant_label: Optional[str] = None
     variant_options: Optional[str] = None
     unit: Optional[str] = None

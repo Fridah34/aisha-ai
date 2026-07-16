@@ -6,6 +6,8 @@
 # coordinates with the database workers, and returns the secure responses.
 # ==============================================================================
 
+import os
+
 from app.auth.dependencies import get_current_user
 from app.auth.utils import (
     create_access_token,
@@ -23,6 +25,13 @@ from app.schema import (
 )
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
+
+#===================ENVIRONMENT CONFIG====================
+# Cookies marked `secure=True` are only stored/sent by browsers over HTTPS.
+# Local dev runs on plain HTTP (localhost:5173 / 127.0.0.1:8000), so `secure`
+# must be False there or the browser silently drops the cookie entirely.
+# Set ENVIRONMENT=production in your deployment's .env once real HTTPS is in place.
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 
 #===================ROUTER INITIALIZATION====================
 
@@ -47,7 +56,6 @@ router = APIRouter(
 )
 def register(
     user_data:UserRegister,
-    response: Response,
     db:Session = Depends(get_db) 
 ):
     # check if email already exist
@@ -64,24 +72,20 @@ def register(
             email=user_data.email,
             name=user_data.name,
             business_name=user_data.business_name,
+            business_type=user_data.business_type,
             hashed_password=hash_password(user_data.password),
         )
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        access_token = create_access_token(data={"sub": new_user.email})
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=1800,
-        )
         return {"user": UserResponse.model_validate(new_user)}
     
-    except Exception:
-        db.rollback() #undo any changes made during the creation process
+    except Exception as e:
+        db.rollback()
+        print("\n ACTUAL REGISTRATION ERROR:", str(e))
+        import traceback
+        traceback.print_exc()
+        print("===========================\n")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create account .Please try again",
@@ -178,7 +182,7 @@ def login(
       key="access_token",
       value=access_token,
       httponly=True,
-      secure=True,
+      secure=IS_PRODUCTION,
       samesite="lax",
       max_age=1800,
   )
@@ -213,7 +217,7 @@ def logout(
     response.delete_cookie(
         key="access_token",
         httponly=True,
-        secure=True,
+        secure=IS_PRODUCTION,
         samesite="lax",
     )
     return{

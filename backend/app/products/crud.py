@@ -4,7 +4,7 @@ Kept separate from router.py so these functions can be tested directly
 or reused (e.g. called from a future bulk-import script) without
 spinning up an HTTP request.
 """
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models import Product
 from app.products.schemas import ProductCreate, ProductUpdate
 
@@ -13,6 +13,7 @@ def get_products_for_business(db: Session, user_id: int) -> list[Product]:
     """Returns every product belonging to one business, newest first."""
     return (
         db.query(Product)
+        .options(joinedload(Product.category))
         .filter(Product.user_id == user_id)
         .order_by(Product.created_at.desc())
         .all()
@@ -27,14 +28,15 @@ def get_product_by_id(db: Session, product_id: int, user_id: int) -> Product | N
     """
     return (
         db.query(Product)
+        .options(joinedload(Product.category))
         .filter(Product.id == product_id, Product.user_id == user_id)
         .first()
     )
 
 
-def create_product(db: Session, product_data: ProductCreate) -> Product:
+def create_product(db: Session, product_data: ProductCreate, user_id:int) -> Product:
     """Inserts a new product row and returns the created object."""
-    new_product = Product(**product_data.model_dump())
+    new_product = Product(**product_data.model_dump(), user_id=user_id)
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
