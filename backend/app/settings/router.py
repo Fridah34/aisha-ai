@@ -9,14 +9,15 @@ These two fields directly control how AISHA behaves:
 AUTH NOTE: user_id passed explicitly for now.
 Replace with Depends(get_current_user) when Eve's JWT auth is ready.
 """
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+import uuid
 from typing import Optional
 
+from app.ai.cache import invalidate_business_cache
 from app.database import get_db
 from app.models import User
-from app.ai.cache import invalidate_business_cache
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -27,7 +28,7 @@ class SettingsUpdate(BaseModel):
 
 
 class SettingsResponse(BaseModel):
-    id: int
+    id: uuid.UUID
     business_name: str
     knowledge_base_text: Optional[str]
     business_type: Optional[str]
@@ -37,9 +38,9 @@ class SettingsResponse(BaseModel):
 
 
 @router.get("", response_model=SettingsResponse)
-def get_settings(user_id: int, db: Session = Depends(get_db)):
+def get_settings(business_id: uuid.UUID, db: Session = Depends(get_db)):
     """Returns current settings for the business."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == business_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Business not found")
     return user
@@ -47,7 +48,7 @@ def get_settings(user_id: int, db: Session = Depends(get_db)):
 
 @router.patch("", response_model=SettingsResponse)
 def update_settings(
-    user_id: int,
+    business_id: uuid.UUID,
     updates: SettingsUpdate,
     db: Session = Depends(get_db)
 ):
@@ -59,7 +60,7 @@ def update_settings(
     PATCH not PUT — only the fields sent are updated,
     everything else is left untouched.
     """
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == business_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Business not found")
 
@@ -79,6 +80,6 @@ def update_settings(
     db.refresh(user)
 
     # Invalidate cache — AISHA rebuilds prompt on next message
-    invalidate_business_cache(user_id)
+    invalidate_business_cache(business_id)
 
     return user

@@ -1,10 +1,10 @@
-import { apiFetch, USER_ID } from './client'
+import { apiFetch, getCurrentBusinessId } from './client'
 
 export const getSettings = () =>
-  apiFetch(`/settings?user_id=${USER_ID}`)
+  apiFetch(`/settings?business_id=${encodeURIComponent(getCurrentBusinessId())}`)
 
 export const updateSettings = (data) =>
-  apiFetch(`/settings?user_id=${USER_ID}`, {
+  apiFetch(`/settings?business_id=${encodeURIComponent(getCurrentBusinessId())}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   })

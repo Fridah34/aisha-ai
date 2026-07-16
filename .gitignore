@@ -4,6 +4,10 @@
 
 # 1. Environment Configurations (Frontend & Backend Secrets)
 .env
+.venv/
+__pycache__/
+*.pyc
+.env
 .env.*
 .env
 .env.local

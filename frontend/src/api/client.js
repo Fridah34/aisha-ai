@@ -2,15 +2,28 @@
  * Base API client.
  * All requests go through /api which Vite proxies to FastAPI.
  *
- * AUTH NOTE: user_id is hardcoded to 1 here for now.
- * When Eve's JWT auth is ready, replace USER_ID with the
- * decoded user id from the JWT token stored in context.
+ * API helpers read the active business UUID from the authenticated user
+ * persisted by useAuth after login or registration.
  */
 
 const BASE = '/api'
 
-// AUTH NOTE: Replace with real user id from JWT when auth is ready
-export const USER_ID = 1
+export function getCurrentBusinessId() {
+  const storedUser = localStorage.getItem('user')
+
+  if (!storedUser) {
+    throw new Error('Your session has expired. Please sign in again.')
+  }
+
+  try {
+    const user = JSON.parse(storedUser)
+    if (typeof user?.id === 'string' && user.id) return user.id
+  } catch {
+    // The session error below gives the user an actionable recovery path.
+  }
+
+  throw new Error('Your account is missing a valid business ID. Please sign in again.')
+}
 
 export async function apiFetch(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {

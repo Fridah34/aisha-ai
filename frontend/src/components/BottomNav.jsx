@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, MessageSquare, Package, Settings,
+  BookOpen, LayoutDashboard, MessageSquare, Package, Settings,
 } from 'lucide-react'
 
 const tabs = [
   { to: '/overview',      label: 'Dashboard',      icon: LayoutDashboard },
   { to: '/conversations', label: 'Conversations',  icon: MessageSquare },
   { to: '/products',      label: 'Products',       icon: Package },
+  { to: '/knowledge-base', label: 'Knowledge',     icon: BookOpen },
   { to: '/settings',      label: 'Settings',       icon: Settings },
 ]
 
@@ -34,7 +35,7 @@ export default function BottomNav() {
           to={to}
           className={({ isActive }) =>
             `flex-1 flex flex-col items-center justify-center gap-0.5
-             text-[10px] font-medium transition-colors
+             text-[10px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset
              ${isActive
                ? 'text-slate-900'
                : 'text-slate-400 hover:text-slate-600'}`

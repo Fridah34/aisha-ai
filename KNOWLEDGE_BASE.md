@@ -256,7 +256,7 @@ Data privacy boundaries are strictly enforced across three distinct structural l
 
 - user_id (which business)
 - source_file (which document)
-- section_path (e.g., "Shipping > International")
+- section_path (e.g., "Shipping")
 - content (the actual text)
 - search_vector (Postgres full-text tsvector, 'simple' config)
 

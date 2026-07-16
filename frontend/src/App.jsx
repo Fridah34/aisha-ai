@@ -23,6 +23,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Overview      from './pages/Overview'
 import Conversations from './pages/Conversations'
+import KnowledgeBase from './pages/KnowledgeBase'
 import Products      from './pages/Products'
 import Settings      from './pages/Settings'
 
@@ -69,7 +70,8 @@ function AppContent() {
                     <Route path="overview" element={<Overview />} />
                     <Route path="conversations" element={<Conversations />} />
                     <Route path="products" element={<Products />} />
-                    <Route pathe="/settings" element={<Settings />} />
+                    <Route path="knowledge-base" element={<KnowledgeBase />} />
+                    <Route path="settings" element={<Settings />} />
                     {/*catch-all fallback framework for  broken inside-dashboard links*/}
                     <Route path="/*" element={<Navigate to="/overview" replace />} />
                     <Route path="*" element={<Navigate to="/overview" replace />} />
@@ -85,8 +87,8 @@ function AppContent() {
       />
 
       {/*Top levelnavigation navigation TRiggers (optimized Route for Cascade Fallback)*/}
-      <Route path="/" element={<Navigate to ={isAuthenticated ? "/overview" : "/login"} replace />} />
-      <Route path="*" element={<Navigate to ={isAuthenticated ? "/overview" : "/login"} replace />} />
+      <Route path="/" element={<Navigate to={isAuthenticated ? "/overview" : "/login"} replace />} />
+      <Route path="*" element={<Navigate to={isAuthenticated ? "/overview" : "/login"} replace />} />
     </Routes>
   )
 }

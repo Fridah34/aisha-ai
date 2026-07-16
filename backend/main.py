@@ -1,6 +1,8 @@
 import app.models
+from app.config import settings
 from app.conversations.router import router as conversations_router
 from app.database import Base, engine
+from app.knowledge_base.router import router as knowledge_base_router
 from app.products.router import router as products_router
 
 # --- MOVE ALL ROUTER IMPORTS TO THE TOP HERE ---
@@ -23,7 +25,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
+    allow_origin_regex=settings.CORS_ALLOW_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,6 +79,7 @@ app.include_router(auth_router)
 app.include_router(products_router)
 app.include_router(conversations_router)
 app.include_router(settings_router)
+app.include_router(knowledge_base_router)
 app.include_router(webhook_router)
 
 
