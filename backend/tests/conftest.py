@@ -47,7 +47,7 @@ def sample_products() -> list[ProductContext]:
     """Mock product catalog."""
     return [
         ProductContext(
-            id=1,
+            id=uuid.uuid4(),
             name="Suede Boots",
             price=Decimal("4500.00"),
             currency=Currency.KES,
@@ -57,7 +57,7 @@ def sample_products() -> list[ProductContext]:
             description="Premium suede hiking boots."
         ),
         ProductContext(
-            id=2,
+            id=uuid.uuid4(),
             name="Red Satin Heels",
             price=Decimal("6000.00"),
             currency=Currency.KES,
@@ -76,12 +76,12 @@ def sample_conversation_history() -> list[ConversationTurn]:
         ConversationTurn(
             role="user",
             content="Hello, do you have sneakers?",
-            timestamp=datetime(2026, 7, 14, 12, 0, 0, tzinfo=timezone.utc)
+            created_at=datetime(2026, 7, 14, 12, 0, 0, tzinfo=timezone.utc)
         ),
         ConversationTurn(
             role="assistant",
             content="Yes! Let me check our running shoes category.",
-            timestamp=datetime(2026, 7, 14, 12, 0, 5, tzinfo=timezone.utc)
+            created_at=datetime(2026, 7, 14, 12, 0, 5, tzinfo=timezone.utc)
         )
     ]
 

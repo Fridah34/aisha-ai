@@ -1,18 +1,20 @@
-from dotenv import load_dotenv, find_dotenv
-from fastapi import APIRouter, Request, Depends
+import os
+import uuid
+from urllib.parse import quote
+
+from dotenv import find_dotenv, load_dotenv
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-import os
-from urllib.parse import quote
 
 load_dotenv(find_dotenv())
 
-from app.database import get_db   # noqa: E402
-from app.models import User , Product   # noqa: E402
-from app.ai.service import process_customer_message    # noqa: E402
-from app.webhook.client import send_text_message     # noqa: E402
-from app.webhook.parser import extract_message_data    # noqa: E402
-from app.ai.cache import already_sent_image, mark_image_sent # noqa : E402
+from app.ai.cache import already_sent_image, mark_image_sent  # noqa : E402
+from app.ai.service import process_customer_message  # noqa: E402
+from app.database import get_db  # noqa: E402
+from app.models import Product, User  # noqa: E402
+from app.webhook.client import send_text_message  # noqa: E402
+from app.webhook.parser import extract_message_data  # noqa: E402
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -21,7 +23,7 @@ UNSUPPORTED_MESSAGE = (
     "Samahani, ninaweza kusoma maandishi tu kwa sasa. Tafadhali andika swali lako."
 )
 
-def find_product_image(response_text:str, user_id: int, db:Session) -> tuple[str | None, int | None]: 
+def find_product_image(response_text: str, business_id: uuid.UUID, db: Session) -> tuple[str | None, uuid.UUID | None]:
     if not response_text:
         return None, None
     
@@ -34,7 +36,7 @@ def find_product_image(response_text:str, user_id: int, db:Session) -> tuple[str
     products_with_images= (
         db.query(Product)
         .filter(
-            Product.user_id == user_id,
+            Product.business_id == business_id,
             Product.image_url.isnot(None),
             Product.is_available.is_(True),
         )
@@ -117,7 +119,7 @@ async def receive_message(
         result = process_customer_message(
             phone_number=customer_phone,
             message_text=message_text,
-            user_id=business.id,
+            business_id=business.id,
             db=db,
             profile_name=profile_name,
         )
@@ -132,18 +134,19 @@ async def receive_message(
 
         matched_image_url, product_id = find_product_image(
         response_text=result["response"],
-        user_id=business.id,
+        business_id=business.id,
         db=db,
         )
 
         if matched_image_url and product_id:
-        # customer_phone is stable and unique for the WhatsApp customer.
-        # Redis keys can safely use strings, so we use it as customer_id.
-            customer_id = customer_phone
+        # Use the real Customer UUID (already resolved/created inside
+        # process_customer_message) as the cache key — not the raw phone
+        # string — so image-sent tracking stays consistent with the DB.
+            customer_id = result["customer_id"]
 
             if already_sent_image(
                 customer_id=customer_id,
-                user_id=business.id,
+                business_id=business.id,
                 product_id=product_id,
             ):
                 print(
@@ -157,7 +160,7 @@ async def receive_message(
             # send the same image again.
                 mark_image_sent(
                     customer_id=customer_id,
-                    user_id=business.id,
+                    business_id=business.id,
                     product_id=product_id,
                 )
 

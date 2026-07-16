@@ -1,8 +1,10 @@
 import sys
-from sqlalchemy.orm import Session
-from app.database import engine, Base, SessionLocal
-import app.models as models
+import uuid
+
 import app.schema as schema
+from app.database import Base, SessionLocal, engine
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 print("Step 1: Initiating database schema synchronization...")
 try:
@@ -18,11 +20,11 @@ print("\nStep 2: Testing Pydantic Schema parsing validation...")
 try:
     # Testing your strict language enum and nested structures using Pydantic
     mock_payload = {
-        "customer_id": 1,
-        "user_id": 1,
-        "sender": "customer",
-        "message": "Niaje maze, mko na mawaridi leo?",
-        "language": "sng"  # Testing your new strict Sheng validation enum!
+        "customer_id": uuid.uuid4(),
+        "business_id": uuid.uuid4(),
+        "role": "USER",
+        "content": "Niaje maze, mko na mawaridi leo?",
+        "language": "EN"
     }
     validated_schema = schema.ConversationCreate(**mock_payload)
     print(f"Schema validation passed! Parsed text language: '{validated_schema.language.value}'")
@@ -35,7 +37,7 @@ print("\n Step 3: Verifying Database Session connectivity...")
 db: Session = SessionLocal()
 try:
     # Verifies your database.py credentials can cleanly open a connection pipe
-    db.execute(models.text("SELECT 1"))
+    db.execute(text("SELECT 1"))
     print("Connection verified! Database session is open and active.")
 finally:
     db.close()

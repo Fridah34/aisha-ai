@@ -1,6 +1,8 @@
-from sqlalchemy.orm import Session
-from app.models import User
+import uuid
 from typing import Optional
+
+from app.models import User
+from sqlalchemy.orm import Session
 
 #==================================================================================
 #                       USER & AUTHENTICATION OPERATIONS
@@ -38,7 +40,7 @@ def get_all_users(db:Session,skip: int = 0, limit: int = 100) -> list[User]:
 
 def update_user(
         db: Session,
-        user_id: int,
+        user_id: uuid.UUID,
         **kwargs
 )-> Optional[User]:
     user = db.query(User).filter(User.id == user_id).first()
@@ -53,7 +55,7 @@ def update_user(
 
 #========== DELETE OPERATIONS==========
 
-def delete_user(db: Session, user_id: int) -> Optional[User]:
+def delete_user(db: Session, user_id: uuid.UUID) -> Optional[User]:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return None

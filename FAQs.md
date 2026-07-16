@@ -104,7 +104,7 @@ AISHA introduces an elite architectural design that resolves the structural flaw
 
 ---
 
-### ❌ The Core Problems with Existing Chatbots
+###  The Core Problems with Existing Chatbots
 
 1. **The Rigid Legacy Bots (The "Reply with 1" Trap):** Most WhatsApp bots across Africa are rule-based systems. They force customers to type exact numbers or words (e.g., *"Press 1 for Shoes, Press 2 for Bags"*). If a customer types a natural human phrase like *"I am looking for a gift for my daughter's graduation"*, these bots fail instantly. They feel robotic and frustrate buyers, driving them away.
 2. **The Naked ChatGPT Bots (The "Hallucination" Nightmare):** Modern startups try to fix this by connecting OpenAI’s API directly to WhatsApp. This creates a catastrophic business risk. Because these models guess the next word based on probability, **they hallucinate statistics**. If an open-ended bot reads a vague catalog, it will routinely look at a item and tell a customer, *"Yes, that designer watch costs KSh 1,500"* when the actual price is KSh 15,000. The merchant is legally stuck with a customer demanding an item at a 90% loss.

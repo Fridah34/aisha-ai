@@ -7,6 +7,7 @@ import uuid
 
 # Import active database session factory
 from app.database import async_session_factory
+from app.knowledge_base.chunking import normalize_query_for_retrieval
 from app.knowledge_base.manager import KnowledgeBaseManager
 
 # Localized multi-tenant testing variables using a valid v4 UUID
@@ -42,7 +43,10 @@ async def run_prompt_pipeline_smoke_test() -> None:
 
             # Step 4: Verify the payload actually contains our requested components
             assert TEST_MERCHANT_NAME in rendered, "Merchant name missing from rendered prompt."
-            assert TEST_CUSTOMER_MESSAGE in rendered, "Customer message missing from rendered prompt."
+            # The pipeline normalizes shorthand (e.g. "4k" -> "4000") before rendering,
+            # so we assert against the normalized message rather than the raw literal.
+            normalized_message = normalize_query_for_retrieval(TEST_CUSTOMER_MESSAGE)
+            assert normalized_message in rendered, "Customer message missing from rendered prompt."
             # Verify structural prompt boundaries (adjust these if your template uses different headers)
             assert "SYSTEM" in rendered.upper() or "INSTRUCTION" in rendered.upper(), "System rules missing."
             

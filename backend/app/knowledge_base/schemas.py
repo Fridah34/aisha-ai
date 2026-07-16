@@ -1,7 +1,8 @@
 # Enable modern string-based type hinting to prevent version evaluation crashes
 from __future__ import annotations
 
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Literal
@@ -36,7 +37,7 @@ class ProductContext(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int = Field(gt=0)
+    id: uuid.UUID
     name: str = Field(min_length=1, max_length=200)
     price: Decimal = Field(ge=0)
     currency: Currency = Currency.KES
@@ -72,7 +73,7 @@ class ConversationTurn(BaseModel):
 
     role: Literal["system", "user", "assistant"]
     content: str = Field(max_length=5000)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ==========================================================
@@ -153,7 +154,7 @@ class PromptPayload(BaseModel):
         # --------------------------------------------
         conversation_text = "\n".join(
             (
-                f"[{turn.timestamp.isoformat()}] "
+                f"[{turn.created_at.isoformat()}] "
                 f"{turn.role}: "
                 f"{self._escape(turn.content)}"
             )

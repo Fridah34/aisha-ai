@@ -1,11 +1,20 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import func  # Add this import
-from app.models import Product, Conversation, Customer, MessageSender, User
-from app.ai.provider import get_ai_response
-from app.ai.prompt_builder import build_system_prompt
+import uuid
+
 from app.ai import cache
+from app.ai.prompt_builder import build_system_prompt
+from app.ai.provider import get_ai_response
 from app.ai.token_utils import truncate_history_to_token_limit
-from app.models import ConversationState, HandoverStatus
+from app.models import (
+    Conversation,
+    ConversationState,
+    Customer,
+    HandoverStatus,
+    MessageRole,
+    Product,
+    User,
+)
+from sqlalchemy import func  # Add this import
+from sqlalchemy.orm import Session
 
 SWAHILI_INDICATORS = {
         # greetings
@@ -27,24 +36,24 @@ SWAHILI_INDICATORS = {
     }
 
 
-def get_business_prompt(user_id: int, db: Session) -> str:
+def get_business_prompt(business_id: uuid.UUID, db: Session) -> str:
     #Step 1 - check Redis first
-    cached = cache.get_cached_business_prompt(user_id)
+    cached = cache.get_cached_business_prompt(business_id)
     if cached:
-        print(f"[Cache HIT] Business { user_id} prompt from redis")
+        print(f"[Cache HIT] Business { business_id} prompt from redis")
         return cached
     
     # Step 2 - cache miss, fetch from postgreSQL
-    print(f"[Cache MISS] Fetching business { user_id} from PostgreSQL")
+    print(f"[Cache MISS] Fetching business { business_id} from PostgreSQL")
     
     
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == business_id).first()
     if not user:
-        raise ValueError(f"Business owner with id {user_id} not found")
+        raise ValueError(f"Business owner with id {business_id} not found")
 
     products = (
         db.query(Product)
-        .filter(Product.user_id ==user_id)
+        .filter(Product.business_id == business_id)
         .filter(Product.is_available.is_(True))
         .all()
     )
@@ -76,19 +85,19 @@ def get_business_prompt(user_id: int, db: Session) -> str:
         business_type = business_type,
     )
     
-    cache.cache_business_prompt(user_id,prompt)
+    cache.cache_business_prompt(business_id, prompt)
     
     return prompt
 
 def get_conversation_history(
-    customer_id: int,
-    user_id:int,
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID,
     db: Session,
     limit: int = 10
 )-> list:
     
     # Step 1 — check Redis first
-    cached = cache.get_cached_conversation(customer_id, user_id)
+    cached = cache.get_cached_conversation(customer_id, business_id)
     if cached is not None:
         print("[Cache HIT] Conversation from Redis")
         return cached
@@ -101,9 +110,9 @@ def get_conversation_history(
         db.query(Conversation)
         .filter(
             Conversation.customer_id == customer_id,
-            Conversation.user_id == user_id
+            Conversation.business_id == business_id
         )
-        .order_by(Conversation.timestamp.desc())
+        .order_by(Conversation.created_at.desc())
         .limit(limit)
         .all()
     )
@@ -112,23 +121,23 @@ def get_conversation_history(
 
     history = []
     for msg in messages:
-            role = "user" if msg.sender.value == "customer" else "assistant"
+            role = "user" if msg.role == MessageRole.USER else "assistant"
             history.append({
                 "role": role,
-                "content": msg.message_text
+                "content": msg.content
         })
     while history and history[0]["role"] != "user":
         history.pop(0)
     #Step 3 - store in Redis for next time
-    cache.cache_conversation(customer_id, user_id, history)
+    cache.cache_conversation(customer_id, business_id, history)
 
     return history
 
 def save_message(
-    customer_id: int,
-    user_id:int,
-    sender: str,
-    message_text: str,
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID,
+    role: str,
+    content: str,
     language: str,
     db: Session,
     delivery_status: str | None = None 
@@ -137,9 +146,9 @@ def save_message(
     # saves tp PostgreSQL permanently and updates Redis simultaneously
     new_message = Conversation(
         customer_id=customer_id,
-        user_id=user_id,
-        sender=MessageSender(sender),
-        message_text=message_text,
+        business_id=business_id,
+        role=MessageRole(role.upper()),
+        content=content,
         language=language,
         delivery_status=delivery_status,
     )
@@ -147,11 +156,11 @@ def save_message(
     db.commit()
     
     # Update Redis cache immediately
-    role = "user" if sender == "customer" else "assistant"
+    history_role = "user" if role.upper() == MessageRole.USER.value else "assistant"
     cache.append_to_conversation_cache(
         customer_id=customer_id,
-        user_id=user_id,
-        message={"role": role, "content": message_text}
+        business_id=business_id,
+        message={"role": history_role, "content": content}
     )
     
 def normalize_phone(phone_number:str) -> str:
@@ -222,7 +231,7 @@ def detect_language(text: str) -> str:
 def process_customer_message(
     phone_number: str,
     message_text: str,
-    user_id: int,
+    business_id: uuid.UUID,
     db: Session,
     profile_name=None
 ) -> dict:
@@ -236,29 +245,29 @@ def process_customer_message(
     # 3. Save customer message
     save_message(
         customer_id=customer.id,
-        user_id=user_id,
-        sender="customer",
-        message_text=message_text,
+        business_id=business_id,
+        role="user",
+        content=message_text,
         language=language,
         db=db
     )
     
-    state = get_or_create_conversation_state(customer.id, user_id, db)
+    state = get_or_create_conversation_state(customer.id, business_id, db)
     
-    if state.status in (HandoverStatus.human_active, HandoverStatus.needs_human):
+    if state.status in (HandoverStatus.HUMAN_ACTIVE, HandoverStatus.NEEDS_HUMAN):
         return {"response":None, "needs_handover": True, "ai_responded": False,
                 "customer_id": customer.id,"language":language}
         
     # A new message after the owner closed it out — AI resumes.
-    if state.status == HandoverStatus.resolved:
-        state.status = HandoverStatus.ai_active
+    if state.status == HandoverStatus.RESOLVED:
+        state.status = HandoverStatus.AI_ACTIVE
         db.commit()
 
     # 4. Build prompt from real database data
-    system_prompt = get_business_prompt(user_id, db)
+    system_prompt = get_business_prompt(business_id, db)
 
     # 5. Fetch conversation history from database
-    history = get_conversation_history(customer.id, user_id, db)
+    history = get_conversation_history(customer.id, business_id, db)
     
     history = truncate_history_to_token_limit(history, system_prompt)
 
@@ -284,17 +293,17 @@ def process_customer_message(
     # 11. Save AISHA's response
     save_message(
         customer_id=customer.id,
-        user_id=user_id,
-        sender="assistant",
-        message_text=clean,
+        business_id=business_id,
+        role="assistant",
+        content=clean,
         language=detected_language,
         db=db
     )
     
     if needs_handover:
-        state.status = HandoverStatus.needs_human
+        state.status = HandoverStatus.NEEDS_HUMAN
         db.commit()
-        notify_handover(customer.id, user_id, message_text, urgency, db)
+        notify_handover(customer.id, business_id, message_text, urgency, db)
 
     return {
         "response": clean,
@@ -307,8 +316,8 @@ def process_customer_message(
     }
     
 def notify_handover(
-    customer_id: int,
-    user_id: int,
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID,
     customer_message: str,
     urgency: str,
     db: Session
@@ -319,11 +328,11 @@ def notify_handover(
     """
     from app.webhook.client import send_owner_alert  # local import avoids circular
 
-    user     = db.query(User).filter(User.id == user_id).first()
+    user     = db.query(User).filter(User.id == business_id).first()
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
 
     phone    = customer.phone_number if customer else "unknown"
-    business = user.business_name   if user     else f"business {user_id}"
+    business = user.business_name   if user     else f"business {business_id}"
     owner_phone = getattr(user, "whatsapp_phone_number", None)
 
     print(
@@ -348,14 +357,14 @@ def notify_handover(
         print("[Handover] Owner has no whatsapp_phone_number — alert skipped")
     
     
-def get_or_create_conversation_state(customer_id: int, user_id: int, db: Session) -> ConversationState:
+def get_or_create_conversation_state(customer_id: uuid.UUID, business_id: uuid.UUID, db: Session) -> ConversationState:
     state = (
         db.query(ConversationState)
-        .filter(ConversationState.customer_id == customer_id, ConversationState.user_id == user_id)
+        .filter(ConversationState.customer_id == customer_id, ConversationState.business_id == business_id)
         .first()
     )
     if not state:
-        state = ConversationState(customer_id=customer_id, user_id=user_id)
+        state = ConversationState(customer_id=customer_id, business_id=business_id)
         db.add(state)
         db.commit()
         db.refresh(state)

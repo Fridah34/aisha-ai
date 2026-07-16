@@ -287,7 +287,7 @@ class KnowledgeBaseManager:
             ConversationTurn(
                 role=row.role,
                 content=row.content,
-                timestamp=row.created_at,
+                created_at=row.created_at,
             )
             for row in reversed(rows)
         ]

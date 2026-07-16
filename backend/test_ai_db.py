@@ -1,7 +1,6 @@
-from app.database import SessionLocal
-from app.ai.service import process_customer_message
 from app import models
-from app.database import engine
+from app.ai.service import process_customer_message
+from app.database import SessionLocal, engine
 
 # Create tables if they don't exist
 models.Base.metadata.create_all(bind=engine)
@@ -29,27 +28,27 @@ try:
 
     # Add test products if none exist
     existing_products = db.query(models.Product).filter(
-        models.Product.user_id == test_user.id
+        models.Product.business_id == test_user.id
     ).count()
 
     if existing_products == 0:
         products = [
             models.Product(
-                user_id=test_user.id,
+                business_id=test_user.id,
                 name="Nike Air Force 1",
                 description="Available in red and white, sizes 6-11",
                 price=4500,
                 is_available=True
             ),
             models.Product(
-                user_id=test_user.id,
+                business_id=test_user.id,
                 name="Adidas Samba",
                 description="Classic white, sizes 6-11",
                 price=5200,
                 is_available=True
             ),
             models.Product(
-                user_id=test_user.id,
+                business_id=test_user.id,
                 name="Puma Suede Classic",
                 description="Black, sizes 6-11",
                 price=3800,
@@ -68,7 +67,7 @@ try:
     result1 = process_customer_message(
         phone_number="+254712345678",
         message_text="Good morning. I am looking for Nike sneakers. What sizes and colors do you have available?",
-        user_id=test_user.id,
+        business_id=test_user.id,
         db=db
     )
     print("Customer: Good morning. I am looking for Nike sneakers. What sizes and colors do you have available?")
@@ -80,7 +79,7 @@ try:
     result2 = process_customer_message(
         phone_number="+254722222222",
         message_text="Habari, ninataka kujua bei za sneakers zenu zote",
-        user_id=test_user.id,
+        business_id=test_user.id,
         db=db
     )
     print("Customer: Habari, ninataka kujua bei za sneakers zenu zote")
@@ -92,7 +91,7 @@ try:
     result3 = process_customer_message(
         phone_number="+254733333333",
         message_text="Ninataka red Nike size 8, bei yake ni how much?",
-        user_id=test_user.id,
+        business_id=test_user.id,
         db=db
     )
     print("Customer: Ninataka red Nike size 8, bei yake ni how much?")
@@ -104,7 +103,7 @@ try:
     result4 = process_customer_message(
         phone_number="+254712345678",
         message_text="I would like to order the Nike Air Force 1 in size 9 please",
-        user_id=test_user.id,
+        business_id=test_user.id,
         db=db
 )
     print("Customer: I would like to order the Nike Air Force 1 in size 9 please")
@@ -116,7 +115,7 @@ try:
     result5 = process_customer_message(
         phone_number="+254744444444",
         message_text="Do you offer corporate bulk purchasing agreements?",
-        user_id=test_user.id,
+        business_id=test_user.id,
         db=db
 )
     print("Customer: Do you offer corporate bulk purchasing agreements?")
@@ -129,7 +128,7 @@ try:
 
     # Show what got saved
     total_messages = db.query(models.Conversation).filter(
-        models.Conversation.user_id == test_user.id
+        models.Conversation.business_id == test_user.id
     ).count()
     total_customers = db.query(models.Customer).count()
     print(f"Messages saved to database: {total_messages}")

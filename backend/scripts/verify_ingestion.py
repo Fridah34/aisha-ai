@@ -10,6 +10,10 @@ from pathlib import Path
 from app.database import async_session_factory
 from app.knowledge_base.manager import IngestionRejectedError, KnowledgeBaseManager
 
+# Register all SQLAlchemy models on the shared Base metadata (mirrors main.py)
+# so cross-model foreign keys, like wiki_chunks -> users, can be resolved.
+from app.models import User
+
 # Seed our locked conftest test tracking profile identifier signature
 TEST_BUSINESS_ID = uuid.UUID("11111111-1111-4111-a111-111111111111")
 TEST_SOURCE_FILE = "policy.md"
@@ -40,9 +44,21 @@ async def run_ingestion_smoke_test() -> None:
         async with async_session_factory() as session:
             # Step 1: Initialize PostgreSQL Row-Level Security connection settings context
             await KnowledgeBaseManager.set_tenant_context(session, TEST_BUSINESS_ID)
-            
+
+            # Seed a temporary tenant/user row so wiki_chunks.business_id's FK constraint
+            # is satisfied. Rolled back at the end alongside the ingested chunks.
+            session.add(
+                User(
+                    id=TEST_BUSINESS_ID,
+                    name="Smoke Test Tenant",
+                    email="smoke-test@example.com",
+                    business_name="Smoke Test Business",
+                )
+            )
+            await session.flush()
+
             # Initialize manager and override its storage path to use our temporary sandbox
-            manager = KnowledgeBaseManager(session, base_dir=temp_path)
+            manager = KnowledgeBaseManager(session, clean_wiki_dir=temp_path)
 
             # Step 2: Provision the sandboxed physical folder directories on disk
             tenant_dir = manager.resolver.ensure_tenant_root(TEST_BUSINESS_ID)

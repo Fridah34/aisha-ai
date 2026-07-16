@@ -105,6 +105,10 @@ sync_engine = create_engine(
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
 
+# Backward-compatible alias: startup code (e.g. main.py's Base.metadata.create_all(bind=engine))
+# expects a plain synchronous `engine` name.
+engine = sync_engine
+
 class Base(DeclarativeBase):
     """Modern DeclarativeBase subclass mapping python models to database tables cleanly."""
     pass

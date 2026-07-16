@@ -1,6 +1,8 @@
-import redis
 import json
 import os
+import uuid
+
+import redis
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +28,7 @@ except Exception as e:
 # and the knowledge base — it almost never changes.
 # We cache it for 1 hour so we don't hit PostgreSQL on every message.
 
-def get_cached_business_prompt(user_id: int):
+def get_cached_business_prompt(business_id: uuid.UUID):
     """
     Returns cached system prompt for a business.
     Returns None if not cached — caller fetches from PostgreSQL.
@@ -34,14 +36,14 @@ def get_cached_business_prompt(user_id: int):
     if not REDIS_AVAILABLE:
         return None
     try:
-        key = f"business_prompt:{user_id}"
+        key = f"business_prompt:{business_id}"
         return redis_client.get(key)
     except Exception as e:
         print(f"Redis read error: {e}")
         return None
 
 
-def cache_business_prompt(user_id: int, prompt: str, ttl_seconds: int = 3600):
+def cache_business_prompt(business_id: uuid.UUID, prompt: str, ttl_seconds: int = 3600):
     """
     Stores the system prompt in Redis for 1 hour.
     TTL = 3600 seconds — Redis deletes it automatically after 1 hour.
@@ -50,13 +52,13 @@ def cache_business_prompt(user_id: int, prompt: str, ttl_seconds: int = 3600):
     if not REDIS_AVAILABLE:
         return
     try:
-        key = f"business_prompt:{user_id}"
+        key = f"business_prompt:{business_id}"
         redis_client.setex(key, ttl_seconds, prompt)
     except Exception as e:
         print(f"Redis write error: {e}")
 
 
-def invalidate_business_cache(user_id: int):
+def invalidate_business_cache(business_id: uuid.UUID):
     """
     Deletes the cached prompt for a business immediately.
     Call this whenever the business owner updates:
@@ -68,22 +70,22 @@ def invalidate_business_cache(user_id: int):
     if not REDIS_AVAILABLE:
         return
     try:
-        key = f"business_prompt:{user_id}"
+        key = f"business_prompt:{business_id}"
         redis_client.delete(key)
-        print(f"✓ Cache invalidated for business {user_id}")
+        print(f"✓ Cache invalidated for business {business_id}")
     except Exception as e:
         print(f"Redis delete error: {e}")
         
-def invalidate_conversation_cache(customer_id: int, user_id: int) -> None:
+def invalidate_conversation_cache(customer_id: uuid.UUID, business_id: uuid.UUID) -> None:
     """
     Clears cached conversation for one customer.Used  during testing
     """
     if not REDIS_AVAILABLE:
         return
     try:
-        key = f"conv:{user_id}:{customer_id}"
+        key = f"conv:{business_id}:{customer_id}"
         redis_client.delete(key)
-        print(f"Conversation cache cleared: customer {customer_id} / business { user_id}")
+        print(f"Conversation cache cleared: customer {customer_id} / business {business_id}")
     except Exception as e:
         print(f"Redis delete error: {e}")    
 
@@ -92,19 +94,19 @@ def invalidate_conversation_cache(customer_id: int, user_id: int) -> None:
 # on every message during an ongoing chat.
 # Cache expires after 2 hours of inactivity.
 
-def get_cached_conversation(customer_id: int, user_id: int):
+def get_cached_conversation(customer_id: uuid.UUID, business_id: uuid.UUID):
     """
     Returns cached conversation history as a list.
     Returns None if not in cache — caller fetches from PostgreSQL.
 
-    Key format: conv:{user_id}:{customer_id}
-    The user_id prefix prevents collisions —
+    Key format: conv:{business_id}:{customer_id}
+    The business_id prefix prevents collisions —
     customer 5 at business 1 is different from customer 5 at business 2.
     """
     if not REDIS_AVAILABLE:
         return None
     try:
-        key = f"conv:{user_id}:{customer_id}"
+        key = f"conv:{business_id}:{customer_id}"
         data = redis_client.get(key)
         if data:
             return json.loads(data)
@@ -115,8 +117,8 @@ def get_cached_conversation(customer_id: int, user_id: int):
 
 
 def cache_conversation(
-    customer_id: int,
-    user_id: int,
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID,
     history: list,
     ttl_seconds: int = 86400
 ):
@@ -127,17 +129,17 @@ def cache_conversation(
     if not REDIS_AVAILABLE:
         return
     try:
-        key = f"conv:{user_id}:{customer_id}"
+        key = f"conv:{business_id}:{customer_id}"
         recent = history[-10:] if len(history) > 10 else history
         redis_client.setex(key, ttl_seconds, json.dumps(recent))
     except Exception as e:
         print(f"Redis conversation write error: {e}")
 
-def already_sent_image(customer_id: int, user_id: int, product_id: int) -> bool:
+def already_sent_image(customer_id: uuid.UUID, business_id: uuid.UUID, product_id: uuid.UUID) -> bool:
     if not REDIS_AVAILABLE:
         return False
     try:
-        key = f"img_sent:{user_id}:{customer_id}:{product_id}"
+        key = f"img_sent:{business_id}:{customer_id}:{product_id}"
         exists = redis_client.exists(key)
 
         print(f"[Redis] Checking image key: {key} -> {'already sent' if exists else 'not sent'}")
@@ -149,21 +151,30 @@ def already_sent_image(customer_id: int, user_id: int, product_id: int) -> bool:
         return False
 
 
-def mark_image_sent(customer_id: int, user_id: int, product_id: int) -> None:
+def mark_image_sent(
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID,
+    product_id: uuid.UUID,
+    ttl_seconds: int = 86400,
+) -> None:
+    """
+    Records that a product image has already been sent to this customer,
+    so `already_sent_image` can prevent duplicate image sends on retried
+    webhook deliveries.
+    """
     if not REDIS_AVAILABLE:
         return
     try:
-        key = f"img_sent:{user_id}:{customer_id}:{product_id}"
-        redis_client.setex(key, 7200, "1")
-
+        key = f"img_sent:{business_id}:{customer_id}:{product_id}"
+        redis_client.setex(key, ttl_seconds, "1")
         print(f"[Redis] Image marked as sent: {key}")
-
     except Exception as e:
         print(f"[Redis] Image mark error: {e}")
 
+
 def append_to_conversation_cache(
-    customer_id: int,
-    user_id: int,
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID,
     message: dict,
     ttl_seconds: int = 86400
 ):
@@ -175,8 +186,8 @@ def append_to_conversation_cache(
     if not REDIS_AVAILABLE:
         return
     try:
-        existing = get_cached_conversation(customer_id, user_id) or []
+        existing = get_cached_conversation(customer_id, business_id) or []
         existing.append(message)
-        cache_conversation(customer_id, user_id, existing, ttl_seconds)
+        cache_conversation(customer_id, business_id, existing, ttl_seconds)
     except Exception as e:
         print(f"Redis append error: {e}")
