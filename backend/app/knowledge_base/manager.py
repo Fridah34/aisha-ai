@@ -235,8 +235,8 @@ class KnowledgeBaseManager:
             SELECT source_file, chunk_text, section_path
             FROM wiki_chunks
             WHERE business_id = :business_id
-              AND to_tsvector('simple', chunk_text) @@ plainto_tsquery('simple', :query)
-            ORDER BY ts_rank(to_tsvector('simple', chunk_text), plainto_tsquery('simple', :query)) DESC
+            AND search_vector @@ plainto_tsquery('simple', :query)
+             ORDER BY ts_rank(search_vector, plainto_tsquery('simple', :query)) DESC
             LIMIT :limit
             """
         )

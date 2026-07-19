@@ -222,10 +222,10 @@ def detect_language(text: str) -> str:
     words = set(text_lower.split())
     
     if words.intersection(SWAHILI_INDICATORS):
-        return "sw"
+        return "SW"
     if any(indicator in text_lower for indicator in SWAHILI_INDICATORS):
-        return "sw"
-    return "en"
+        return "SW"
+    return "EN"
 
 
 def process_customer_message(

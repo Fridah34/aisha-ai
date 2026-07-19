@@ -209,7 +209,8 @@ Data privacy boundaries are strictly enforced across three distinct structural l
   ```sql
   ALTER TABLE wiki_chunks ENABLE ROW LEVEL SECURITY;
   CREATE POLICY tenant_isolation_policy ON wiki_chunks 
-  USING (business_id = current_setting('app.current_business_id'));
+  USING (business_id = current_setting('app.current_business_id',
+  true)::uuid);
   ```
   PostgreSQL intercepts every query at the storage engine level. If a bug or human error happens in the application code, the database kernel itself physically filters the rows, blinding the system from reading data belonging to any other store ID.
 
