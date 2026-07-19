@@ -68,5 +68,3 @@ def delete_user(db: Session, user_id: uuid.UUID) -> Optional[User]:
 def user_exists(db:Session,email:str) -> bool:
     return db.query(User).filter(User.email == email).first() is not None
 
-def get_active_users(db: Session) -> list[User]:
-    return db.query(User).filter(User.is_active).all()

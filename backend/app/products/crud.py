@@ -8,13 +8,14 @@ import uuid
 
 from app.models import Product
 from app.products.schemas import ProductCreate, ProductUpdate
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 
 def get_products_for_business(db: Session, business_id: uuid.UUID) -> list[Product]:
     """Returns every product belonging to one business, newest first."""
     return (
         db.query(Product)
+        .options(joinedload(Product.category))
         .filter(Product.business_id == business_id)
         .order_by(Product.created_at.desc())
         .all()
@@ -29,6 +30,7 @@ def get_product_by_id(db: Session, product_id: uuid.UUID, business_id: uuid.UUID
     """
     return (
         db.query(Product)
+        .options(joinedload(Product.category))
         .filter(Product.id == product_id, Product.business_id == business_id)
         .first()
     )

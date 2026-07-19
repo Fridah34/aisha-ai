@@ -24,7 +24,7 @@ def get_inbox(db: Session, business_id: uuid.UUID) -> list[dict]:
         .subquery()
     )
     
-    #join back to get the actual message content at that created_at
+    # join back to get the actual message content at that created_at
     rows = (
         db.query(
             Conversation,
@@ -40,17 +40,30 @@ def get_inbox(db: Session, business_id: uuid.UUID) -> list[dict]:
         .all()
     )
     
-    return[
-        {
+    # Fetch all conversation states for this business in one query
+    # This avoids N+1 queries and join ambiguity
+    states = {
+        s.customer_id: s.status
+        for s in db.query(ConversationState)
+        .filter(ConversationState.business_id == business_id)
+        .all()
+    }
+    
+    result = []
+    for conv, customer, last_time, total in rows:
+        status = states.get(customer.id, HandoverStatus.AI_ACTIVE)
+        
+        result.append({
             "customer_id": customer.id,
             "customer_phone": customer.phone_number,
             "customer_name": customer.name,
             "last_message": conv.content,
             "last_message_time": last_time,
             "total_messages": total,
-        }
-        for conv, customer, last_time,total in rows
-    ]
+            "conversation_status": status.value,
+        })
+    
+    return result
     
 def get_thread(db: Session, customer_id: uuid.UUID, business_id: uuid.UUID):
     customer = (

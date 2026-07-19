@@ -3,6 +3,8 @@ import { getInbox } from '../api/conversations'
 import { getProducts } from '../api/products'
 import { getSettings } from '../api/settings'
 import { Users, MessageSquare, Package, AlertTriangle } from 'lucide-react'
+import { useWebSocket } from '../context/WebSocketContext'
+
 
 function timeAgo(iso) {
   if (!iso) return ''
@@ -69,14 +71,46 @@ export default function Overview() {
   const [inbox,    setInbox]    = useState(null)
   const [products, setProducts] = useState(null)
   const [settings, setSettings] = useState(null)
+  const { isConnected, lastMessage } = useWebSocket()
 
-  useEffect(() => {
+  const loadData = () => {
     Promise.allSettled([getInbox(), getProducts(), getSettings()])
       .then(([c, p, s]) => {
         setInbox(   c.status === 'fulfilled' ? (Array.isArray(c.value) ? c.value : []) : [])
         setProducts(p.status === 'fulfilled' ? (Array.isArray(p.value) ? p.value : []) : [])
         setSettings(s.status === 'fulfilled' ? s.value : null)
       })
+  }
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  // 👇 Listen for WebSocket status changes
+  useEffect(() => {
+    if (lastMessage?.type === 'status_change') {
+      // Refresh inbox to get updated status
+      getInbox()
+        .then(data => {
+          const list = Array.isArray(data) ? data : []
+          setInbox(list)
+        })
+        .catch(() => setInbox([]))
+    }
+  }, [lastMessage])
+
+  // Also listen for custom events as backup
+  useEffect(() => {
+    const handleStatusChange = () => {
+      getInbox()
+        .then(data => {
+          const list = Array.isArray(data) ? data : []
+          setInbox(list)
+        })
+        .catch(() => setInbox([]))
+    }
+
+    window.addEventListener('conversation_status_change', handleStatusChange)
+    return () => window.removeEventListener('conversation_status_change', handleStatusChange)
   }, [])
 
   // Real data derivations
@@ -84,9 +118,8 @@ export default function Overview() {
 
   // Handovers: conversations where last_message_time exists and
   // last_message contains the handover phrase — real field from DB
-  const HANDOVER_PHRASE = 'Let me connect you with our team'
   const handovers = inbox?.filter(c =>
-    c.last_message?.includes(HANDOVER_PHRASE)
+    c.conversation_status === 'needs_human'
   ).length ?? null
 
   const availableProducts = products?.filter(p => p.is_available).length ?? 0
@@ -97,6 +130,13 @@ export default function Overview() {
 
   return (
     <div className="p-8 max-w-6xl">
+      {/* WebSocket Connection Status - Optional indicator */}
+      <div className="mb-4 flex items-center gap-2 text-xs">
+        <span className={`inline-block w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+        <span className="text-slate-400">
+          {isConnected ? 'Live updates connected' : 'Reconnecting...'}
+        </span>
+      </div>
 
       {/* Greeting — uses real business_name from settings */}
       <div className="mb-7">
@@ -163,7 +203,7 @@ export default function Overview() {
           ) : (
             <div className="divide-y divide-slate-100">
               {inbox.slice(0, 5).map((c) => {
-                const isHandover = c.last_message?.includes(HANDOVER_PHRASE)
+                const isHandover = c.conversation_status === 'needs_human'
                 return (
                   <div key={c.customer_id} className="flex items-center gap-3 py-3">
                     {/* Avatar — initials from name, or last 2 phone digits */}

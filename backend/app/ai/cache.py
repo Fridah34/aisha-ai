@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import uuid
@@ -22,6 +23,18 @@ except Exception as e:
     print(f"Redis not available: {e} - running without cache")
     REDIS_AVAILABLE = False
     redis_client = None
+    
+# ─── PROMPT VERSIONING ─────────────────────────────────────────────────────
+# Hashes the actual bytecode of build_system_prompt so any edit to that
+# function automatically produces a new cache key. Old keys for the previous
+# version simply become orphaned and are never read again — no manual
+# `DEL business_prompt:<id>` needed after every prompt change, and no risk
+# of silently serving a stale prompt for up to an hour after a code edit.
+def get_prompt_version() -> str:
+    """Returns an 8-char MD5 hash of the prompt builder function bytecode."""
+    from app.ai.prompt_builder import build_system_prompt
+    return hashlib.md5(build_system_prompt.__code__.co_code).hexdigest()[:8]
+
     
 # ─── BUSINESS PROMPT CACHE ────────────────────────────────────────────────────
 # The business prompt contains the business name, all products,
@@ -78,7 +91,7 @@ def invalidate_business_cache(business_id: uuid.UUID):
         
 def invalidate_conversation_cache(customer_id: uuid.UUID, business_id: uuid.UUID) -> None:
     """
-    Clears cached conversation for one customer.Used  during testing
+    Clears cached conversation for one customer. Used during testing.
     """
     if not REDIS_AVAILABLE:
         return
@@ -92,7 +105,7 @@ def invalidate_conversation_cache(customer_id: uuid.UUID, business_id: uuid.UUID
 # ─── CONVERSATION CACHE ───────────────────────────────────────────────────────
 # Active conversations are cached so we don't hit PostgreSQL
 # on every message during an ongoing chat.
-# Cache expires after 2 hours of inactivity.
+# Cache expires after 24 hours of inactivity.
 
 def get_cached_conversation(customer_id: uuid.UUID, business_id: uuid.UUID):
     """
@@ -123,7 +136,7 @@ def cache_conversation(
     ttl_seconds: int = 86400
 ):
     """
-    Stores conversation history in Redis for 2 hours.
+    Stores conversation history in Redis for 24 hours.
     Only keeps the last 10 messages — same limit as our DB fetch.
     """
     if not REDIS_AVAILABLE:
@@ -136,6 +149,10 @@ def cache_conversation(
         print(f"Redis conversation write error: {e}")
 
 def already_sent_image(customer_id: uuid.UUID, business_id: uuid.UUID, product_id: uuid.UUID) -> bool:
+    """
+    Checks if a product image has already been sent to this customer.
+    Used to prevent duplicate image sends on retried webhook deliveries.
+    """
     if not REDIS_AVAILABLE:
         return False
     try:

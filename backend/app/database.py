@@ -1,3 +1,4 @@
+
 # Enable modern string-based type hinting to prevent version evaluation crashes
 from __future__ import annotations
 
