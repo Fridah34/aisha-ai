@@ -28,6 +28,7 @@ import Overview from './pages/Overview';
 import Conversations from './pages/Conversations';
 import Products from './pages/Products';
 import Categories from './pages/Categories';
+import Orders from './pages/Orders';
 import Settings from './pages/Settings';
 
 /**
@@ -88,6 +89,7 @@ function AppContent() {
                     <Route path="conversations" element={<Conversations />} />
                     <Route path="products" element={<Products />} />
                     <Route path="categories" element={<Categories />} />
+                    <Route path="orders" element={<Orders />} />
                     <Route path="settings" element={<Settings />} />
 
                     {/* Dashboard fallback */}

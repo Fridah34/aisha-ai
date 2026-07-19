@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import UUID
 
 
 class OrderStatus(enum.Enum):
@@ -231,6 +232,18 @@ class MarketplaceSession(Base):
     pending_action = Column(String(50), nullable= True)
     selected_business_type = Column(String(50), nullable=True)
     selected_business_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    selected_product_id = Column(Integer, ForeignKey("products.id", ondelete= "SET NULL"), nullable=True)
+    selected_size = Column(String(20),nullable=True)
+    # Tracks which page of a paginated List Picker menu (categories or
+    # stores) the customer is currently on, in units of PAGE_SIZE (see
+    # marketplace_flow.py). Needed because WhatsApp's list-picker interactive
+    # message is hard-capped at 10 rows total (Meta platform limit, not a
+    # Twilio restriction) — once category/store counts exceed that, browsing
+    # becomes a multi-page "More options" flow, and this is what lets the
+    # session remember which page a reply should resolve against.
+    # server_default="0" so existing rows backfill cleanly on migration.
+    list_offset = Column(Integer, default=0, nullable=False, server_default="0")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
 class Cart(Base):
@@ -250,24 +263,11 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
+    order_group_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    customer_id = Column(Integer,ForeignKey("customers.id", ondelete="SET NULL"),nullable=True)
+    product_id = Column(Integer,ForeignKey("products.id", ondelete="SET NULL"),nullable=True)
 
-    customer_id = Column(
-        Integer,
-        ForeignKey("customers.id", ondelete="SET NULL"),
-        nullable=True
-    )
-
-    product_id = Column(
-        Integer,
-        ForeignKey("products.id", ondelete="SET NULL"),
-        nullable=True
-    )
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True
-    )
+    user_id = Column(Integer,ForeignKey("users.id", ondelete="SET NULL"),nullable=True)
 
     quantity = Column(Integer, default=1, nullable=False)
     total_amount = Column(Numeric(10, 2), nullable=False)

@@ -3,6 +3,7 @@ from app.webhook.router import router as webhook_router
 #from app.auth.knowledge_base import router as knowledge_base_router
 from app.products.router import router as products_router
 from app.categories.router import router as categories_router
+from app.orders.router import router as orders_router
 from app.conversations.router import router as conversations_router
 from app.database import Base, engine
 
@@ -43,6 +44,7 @@ app.include_router(webhook_router)
 app.include_router(products_router)
 app.include_router(categories_router)
 app.include_router(conversations_router)
+app.include_router(orders_router)
 app.include_router(settings_router)
 app.include_router(auth_router)
 
