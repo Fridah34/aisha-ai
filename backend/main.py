@@ -18,7 +18,9 @@ import os
 
 # --- APPLICATION SETUP ---
 #Base.metadata.drop_all(bind=engine)
-Base.metadata.create_all(bind=engine)
+#Base.metadata.create_all(bind=engine)
+
+print("DB HOST:", os.getenv("DATABASE_URL"))
 
 app = FastAPI(
     title="AISHA AI",

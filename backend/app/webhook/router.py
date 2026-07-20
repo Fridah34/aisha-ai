@@ -357,6 +357,14 @@ async def receive_message(
                              message_text=reply_text, language=language, db=db)
                 send_text_message(to_phone=customer_phone, message=reply_text)
                 return Response(status_code=200)
+            
+            #Customer
+            if is_checkout_command(message_text):
+                reply_text = "Please share your name and contact number to complete your order, e.g. 'John 0712345678'."
+                save_message(customer_id=customer.id, user_id=business.id, sender="assistant",
+                            message_text=reply_text, language=language, db=db)
+                send_text_message(to_phone=customer_phone, message=reply_text)
+                return Response(status_code=200)
 
             name, contact = parse_name_and_contact(message_text)
             if not contact:

@@ -107,13 +107,13 @@ def create_browse_more_template():
     
 
 if __name__ == "__main__":
-    #list_sid = create_list_picker_template()
-    #quick_reply_sid = create_quick_reply_template()
+    list_sid = create_list_picker_template()
+    quick_reply_sid = create_quick_reply_template()
     browse_more_sid = create_browse_more_template()
     
     print("\n\n=== SAVE THESE TO YOUR .env ===")
-    #print(f"TWILIO_LIST_PICKER_SID={list_sid}")
-    #print(f"TWILIO_QUICK_REPLY_SID={quick_reply_sid}")
+    print(f"TWILIO_LIST_PICKER_SID={list_sid}")
+    print(f"TWILIO_QUICK_REPLY_SID={quick_reply_sid}")
     print(f"TWILIO_BROWSE_MORE_SID={browse_more_sid}")
 
 
