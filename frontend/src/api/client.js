@@ -2,34 +2,54 @@
  * Base API client.
  * All requests go through /api which Vite proxies to FastAPI.
  *
- * AUTH NOTE: user_id is hardcoded to 1 here for now.
- * When Eve's JWT auth is ready, replace USER_ID with the
- * decoded user id from the JWT token stored in context.
+ * API helpers read the active business UUID from the authenticated user
+ * persisted by useAuth after login or registration.
  */
 
 const BASE = '/api'
-const WS_BASE = 'ws://localhost:5173' 
 
-// AUTH NOTE: Replace with real user id from JWT when auth is ready
+// UUID v4 regex pattern
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+export function getCurrentBusinessId() {
+  const businessId = localStorage.getItem('business_id')
+  const storedUser = localStorage.getItem('user')
+
+  if (!businessId && storedUser) {
+    const parsedUser = JSON.parse(storedUser)
+    if (parsedUser?.id && UUID_REGEX.test(parsedUser.id)) {
+      localStorage.setItem('business_id', parsedUser.id)
+      return parsedUser.id
+    }
+  }
+
+  // Validate UUID format
+  if (businessId && UUID_REGEX.test(businessId)) {
+    return businessId
+  }
+
+  // Clear stale keys on invalid/missing business_id
+  localStorage.removeItem('user_id')
+  localStorage.removeItem('business_id')
+  localStorage.removeItem('user')
+
+  // Redirect to login if not already there
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+
+  throw new Error('Your session has expired. Please sign in again.')
+}
 
 export async function apiFetch(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
-    credentials : 'include',
     ...options,
   })
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: 'Unknown error' }))
-    let message = `HTTP ${ res.status}`
-    if (typeof error.detail === 'string') {
-      message = error.detail
-    } else if (Array.isArray(error.detail)) {
-      // FastAPI validation errors: [{ loc, msg, type }, ...]
-      message = error.detail.map(e => e.msg).join('; ')
-    }
-    throw new Error(message)
+    throw new Error(error.detail || `HTTP ${res.status}`)
   }
 
   // 204 No Content — no body to parse
@@ -38,7 +58,9 @@ export async function apiFetch(path, options = {}) {
   return res.json()
 }
 
- //WebSocket helper
 export function getWebSocketUrl() {
-  return `${WS_BASE}/ws/conversations`
+  const apiBase =
+    import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+  return apiBase.replace(/^http/, "ws") + "/ws";
 }

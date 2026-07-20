@@ -1,16 +1,30 @@
 import re
 import uuid
-from sqlalchemy.orm import Session
-from sqlalchemy import String, func
-from app.models import User, Category, Product, Order, Customer
-from app.models import MarketplaceSession, Cart
 from datetime import datetime, timedelta, timezone
+
+from app.models import (
+    Cart,
+    Category,
+    Customer,
+    MarketplaceSession,
+    Order,
+    Product,
+    User,
+)
+from sqlalchemy import String, func
+from sqlalchemy.orm import Session
 
 SESSION_TIMEOUT_MINUTES = 30
 
 SWITCH_KEYWORDS = {"switch", "switch store", "change store", "menu", "other shops"}
 CHECKOUT_KEYWORDS = {"checkout", "check out", "done", "complete order", "finish order"}
-STATUS_KEYWORDS = {"status", "order status", "my order", "track order", "track my order"}
+STATUS_KEYWORDS = {
+    "status",
+    "order status",
+    "my order",
+    "track order",
+    "track my order",
+}
 
 NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
@@ -34,7 +48,7 @@ def _menu_items_for_offset(all_items: list[str], offset: int) -> list[str]:
     `offset`, plus a trailing 'More options' entry if there are more
     items beyond this page. Never returns more than 10 items total,
     which is what send_list_picker() requires."""
-    page = all_items[offset: offset + PAGE_SIZE]
+    page = all_items[offset : offset + PAGE_SIZE]
     has_more = (offset + PAGE_SIZE) < len(all_items)
     return page + [MORE_OPTIONS_LABEL] if has_more else page
 
@@ -65,10 +79,14 @@ def _resolve_paginated_choice(
     return choice, None
 
 
-def get_or_create_marketplace_session(phone_number: str, db: Session) -> MarketplaceSession:
-    session = db.query(MarketplaceSession).filter(
-        MarketplaceSession.phone_number == phone_number
-    ).first()
+def get_or_create_marketplace_session(
+    phone_number: str, db: Session
+) -> MarketplaceSession:
+    session = (
+        db.query(MarketplaceSession)
+        .filter(MarketplaceSession.phone_number == phone_number)
+        .first()
+    )
     if not session:
         session = MarketplaceSession(phone_number=phone_number)
         db.add(session)
@@ -88,8 +106,10 @@ def is_switch_command(message: str) -> bool:
 def is_checkout_command(message: str) -> bool:
     return message.strip().lower() in CHECKOUT_KEYWORDS
 
+
 def is_status_command(message: str) -> bool:
     return message.strip().lower() in STATUS_KEYWORDS
+
 
 def reset_to_menu(session: MarketplaceSession, db: Session) -> None:
     """Deliberately does NOT touch the Cart table - the cart stays keyed by
@@ -106,7 +126,7 @@ def reset_to_menu(session: MarketplaceSession, db: Session) -> None:
     db.commit()
 
 
-def get_or_create_cart(phone_number: str, business_id: int, db: Session) -> Cart:
+def get_or_create_cart(phone_number: str, business_id: uuid.UUID, db: Session) -> Cart:
     cart = (
         db.query(Cart)
         .filter(Cart.phone_number == phone_number, Cart.business_id == business_id)
@@ -152,7 +172,7 @@ def get_businesses_by_category(db: Session, category_name: str) -> list[User]:
     reason as get_all_categories()."""
     return (
         db.query(User)
-        .join(Category, Category.user_id == User.id)
+        .join(Category, Category.business_id == User.id)
         .filter(
             Category.name == category_name,
             Category.is_active,
@@ -164,24 +184,36 @@ def get_businesses_by_category(db: Session, category_name: str) -> list[User]:
     )
 
 
-def get_categories_for_business(db: Session, user_id: int) -> list[Category]:
+def get_categories_for_business(db: Session, business_id: uuid.UUID) -> list[Category]:
     return (
         db.query(Category)
-        .filter(Category.user_id == user_id, Category.is_active)
+        .filter(Category.business_id == business_id, Category.is_active)
         .order_by(Category.display_order)
         .all()
     )
 
 
-def get_products_for_category(db: Session, user_id: int, category_id: int) -> list[Product]:
+def get_products_for_category(
+    db: Session,
+    business_id: uuid.UUID,
+    category_id: uuid.UUID,
+) -> list[Product]:
     return (
         db.query(Product)
-        .filter(Product.user_id == user_id, Product.category_id == category_id, Product.is_available)
+        .filter(
+            Product.business_id == business_id,
+            Product.category_id == category_id,
+            Product.is_available,
+        )
         .all()
     )
 
 
-def get_products_for_business_category(db: Session, business_id: int, category_name: str) -> list[Product]:
+def get_products_for_business_category(
+    db: Session,
+    business_id: uuid.UUID,
+    category_name: str,
+) -> list[Product]:
     """Finds this specific business's Category row matching the name the
     customer picked at the top-level menu, then returns its products.
     Needed because Category is per-business — the same name ('Dresses')
@@ -189,7 +221,7 @@ def get_products_for_business_category(db: Session, business_id: int, category_n
     category = (
         db.query(Category)
         .filter(
-            Category.user_id == business_id,
+            Category.business_id == business_id,
             Category.name == category_name,
             Category.is_active,
         )
@@ -220,7 +252,12 @@ def _format_product_list(products: list[Product]) -> str:
     return "\n".join(lines)
 
 
-def resolve_product_choice(business_id: int, category_name: str, message: str, db: Session) -> Product | None:
+def resolve_product_choice(
+    business_id: uuid.UUID,
+    category_name: str,
+    message: str,
+    db: Session,
+) -> Product | None:
     """Matches a customer's reply (number or name) against the product list
     they were just shown for this business/category. Returns None if no
     match — caller should then let the message flow through normally
@@ -235,19 +272,19 @@ def resolve_product_choice(business_id: int, category_name: str, message: str, d
     choice = _resolve_choice(message, names)
     if choice is not None:
         return next((p for p in products if p.name.strip() == choice), None)
-    
+
     text_clean = message.strip().lower()
     if text_clean:
         partial_matches = [p for p in products if text_clean in p.name.strip().lower()]
         if len(partial_matches) == 1:
             return partial_matches[0]
-        
+
     return None
 
 
 def format_numbered_list(items: list, label_fn) -> str:
     """Turns a list into '1 Name\n2 Name...' — reused at every step."""
-    return "\n".join(f"{i+1} {label_fn(item)}" for i, item in enumerate(items))
+    return "\n".join(f"{i + 1} {label_fn(item)}" for i, item in enumerate(items))
 
 
 def _parse_sizes(variant_options: str) -> list[str]:
@@ -267,11 +304,11 @@ def resolve_size_choice(text: str, variant_options: str) -> str | None:
     for s in sizes:
         if s.lower() == text_clean:
             return s
-        
+
     for s in sizes:
         if re.search(rf"\b{re.escape(s.lower())}\b", text_clean):
             return s
-        
+
     return None
 
 
@@ -286,17 +323,21 @@ def parse_quantity(text: str) -> int | None:
     return None
 
 
-def add_item_to_cart(cart: Cart, product: Product, size: str | None, qty: int, db: Session) -> None:
+def add_item_to_cart(
+    cart: Cart, product: Product, size: str | None, qty: int, db: Session
+) -> None:
     """Reassigns cart.items (rather than .append() in place) so SQLAlchemy's
     change-tracking on the JSON column actually detects the mutation."""
     items = list(cart.items or [])
-    items.append({
-        "product_id": product.id,
-        "name": product.name,
-        "size": size,
-        "qty": qty,
-        "unit_price": float(product.price),
-    })
+    items.append(
+        {
+            "product_id": product.id,
+            "name": product.name,
+            "size": size,
+            "qty": qty,
+            "unit_price": float(product.price),
+        }
+    )
     cart.items = items
     db.commit()
 
@@ -310,7 +351,9 @@ def format_cart_summary(cart: Cart) -> str:
         line_total = item["qty"] * item["unit_price"]
         total += line_total
         size_part = f" (Size {item['size']})" if item.get("size") else ""
-        lines.append(f"- {item['qty']}x {item['name']}{size_part} — Ksh {line_total:.2f}")
+        lines.append(
+            f"- {item['qty']}x {item['name']}{size_part} — Ksh {line_total:.2f}"
+        )
     lines.append(f"\nTotal: Ksh {total:.2f}")
     return "\n".join(lines)
 
@@ -324,12 +367,16 @@ def parse_name_and_contact(text: str) -> tuple[str, str]:
     contact = phone_match.group(0) if phone_match else ""
     name = text
     if phone_match:
-        name = (text[:phone_match.start()] + text[phone_match.end():]).strip()
-    name = re.sub(r"\b(my|contact|is|number|phone)\b", "", name, flags=re.IGNORECASE).strip(" ,:-")
+        name = (text[: phone_match.start()] + text[phone_match.end() :]).strip()
+    name = re.sub(
+        r"\b(my|contact|is|number|phone)\b", "", name, flags=re.IGNORECASE
+    ).strip(" ,:-")
     return (name or "Customer"), contact
 
 
-def create_orders_from_cart(cart: Cart, business: User, customer: Customer, name: str, contact: str, db: Session) -> list[Order]:
+def create_orders_from_cart(
+    cart: Cart, business: User, customer: Customer, name: str, contact: str, db: Session
+) -> list[Order]:
     """One Order row per cart line item, all sharing one order_group_id so
     a multi-item checkout can be queried/displayed as a single unit even
     though the schema models it as N rows."""
@@ -340,7 +387,7 @@ def create_orders_from_cart(cart: Cart, business: User, customer: Customer, name
             order_group_id=group_id,
             customer_id=customer.id,
             product_id=item["product_id"],
-            user_id=business.id,
+            business_id=business.id,
             quantity=item["qty"],
             total_amount=item["qty"] * item["unit_price"],
             snapshot_customer_name=name,
@@ -353,6 +400,7 @@ def create_orders_from_cart(cart: Cart, business: User, customer: Customer, name
         orders.append(order)
     db.commit()
     return orders
+
 
 def extract_order_ref(message: str) -> str | None:
     """Looks for the 8-char hex fragment we show customers as their order
@@ -394,11 +442,7 @@ def get_latest_orders_for_customer(phone_number: str, db: Session) -> list[Order
         return []
     if not latest.order_group_id:
         return [latest]  # legacy row predating order_group_id
-    return (
-        db.query(Order)
-        .filter(Order.order_group_id == latest.order_group_id)
-        .all()
-    )
+    return db.query(Order).filter(Order.order_group_id == latest.order_group_id).all()
 
 
 def format_order_status(orders: list[Order]) -> str:
@@ -408,14 +452,21 @@ def format_order_status(orders: list[Order]) -> str:
             "double-check the number, or reply 'status' to see your most "
             "recent order."
         )
-    ref = str(orders[0].order_group_id)[:8] if orders[0].order_group_id else str(orders[0].id)
+    ref = (
+        str(orders[0].order_group_id)[:8]
+        if orders[0].order_group_id
+        else str(orders[0].id)
+    )
     lines = [f"Order #{ref} — {orders[0].snapshot_business_name}", ""]
     for o in orders:
         lines.append(f"- {o.quantity}x {o.snapshot_product_name} — _{o.status.value}_")
     lines.append("\n_Reply with another order reference to check a different order._")
     return "\n".join(lines)
 
-def handle_marketplace_step(session: MarketplaceSession, message: str, db: Session) -> tuple[str, list[str] | None]:
+
+def handle_marketplace_step(
+    session: MarketplaceSession, message: str, db: Session
+) -> tuple[str, list[str] | None]:
     """
     ALWAYS returns a (text, items) tuple. Every return path in this
     function must follow this contract — router.py unconditionally does
@@ -428,13 +479,16 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
     """
     categories = get_all_categories(db)
     if not categories:
-        return "Sorry, no categories are available right now. Please try again later.", None
+        return (
+            "Sorry, no categories are available right now. Please try again later.",
+            None,
+        )
 
     # First-ever message from this phone number, or session was reset
     if session.pending_action is not None and session.selected_business_id is None:
-        is_stale = (
-            datetime.now(timezone.utc) - session.updated_at
-        ) > timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+        is_stale = (datetime.now(timezone.utc) - session.updated_at) > timedelta(
+            minutes=SESSION_TIMEOUT_MINUTES
+        )
         if is_stale:
             session.pending_action = None
             session.selected_business_type = None
@@ -453,7 +507,9 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
 
     if session.pending_action == "select_need":
         titled_categories = [c.title() for c in categories]
-        choice, next_page = _resolve_paginated_choice(message, titled_categories, session, db)
+        choice, next_page = _resolve_paginated_choice(
+            message, titled_categories, session, db
+        )
 
         if next_page is not None:
             return "What are you looking for today?", next_page
@@ -465,7 +521,10 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
         businesses = get_businesses_by_category(db, matched_category)
 
         if not businesses:
-            return "No stores found for that category right now. Please choose another.", None
+            return (
+                "No stores found for that category right now. Please choose another.",
+                None,
+            )
 
         session.selected_business_type = matched_category
         session.pending_action = "select_business"
@@ -497,7 +556,9 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
         # so downstream "add to cart" logic never has to create-or-fetch.
         get_or_create_cart(session.phone_number, chosen.id, db)
 
-        products = get_products_for_business_category(db, chosen.id, session.selected_business_type)
+        products = get_products_for_business_category(
+            db, chosen.id, session.selected_business_type
+        )
         has_photos = any(p.image_url for p in products)
 
         if not products:
@@ -526,7 +587,9 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
             # Fall back to the full text list so they still get something
             # to act on, same defensive-fallback pattern used elsewhere
             # in this project (e.g. send_browse_more_prompt's text fallback).
-            product_text = format_product_list_for_business(db, chosen.id, session.selected_business_type)
+            product_text = format_product_list_for_business(
+                db, chosen.id, session.selected_business_type
+            )
             welcome = (
                 f"Welcome to {chosen.business_name}! Here's what we have in "
                 f"{session.selected_business_type}:\n\n"
@@ -534,7 +597,7 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
                 + "\n\n_Tip: reply 'menu' anytime to browse other stores._"
             )
         return welcome, None
-            
+
     if session.pending_action == "awaiting_product_choice":
         product = resolve_product_choice(
             session.selected_business_id, session.selected_business_type, message, db
@@ -573,7 +636,10 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
             session.pending_action = "awaiting_product_choice"
             session.selected_product_id = None
             db.commit()
-            return "Sorry, that product is no longer available. Please choose another.", None
+            return (
+                "Sorry, that product is no longer available. Please choose another.",
+                None,
+            )
 
         size = resolve_size_choice(message, product.variant_options)
         if size is None:
@@ -591,7 +657,10 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
     if session.pending_action == "awaiting_quantity":
         qty = parse_quantity(message)
         if qty is None:
-            return "Please reply with a number (e.g. 1, 2, 3) for how many you'd like.", None
+            return (
+                "Please reply with a number (e.g. 1, 2, 3) for how many you'd like.",
+                None,
+            )
 
         product = db.query(Product).get(session.selected_product_id)
         if product is None:
@@ -599,9 +668,14 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
             session.selected_product_id = None
             session.selected_size = None
             db.commit()
-            return "Sorry, that product is no longer available. Please choose another.", None
+            return (
+                "Sorry, that product is no longer available. Please choose another.",
+                None,
+            )
 
-        cart = get_or_create_cart(session.phone_number, session.selected_business_id, db)
+        cart = get_or_create_cart(
+            session.phone_number, session.selected_business_id, db
+        )
         add_item_to_cart(cart, product, session.selected_size, qty, db)
 
         session.selected_product_id = None
@@ -618,7 +692,9 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
 
     if session.pending_action == "post_add":
         if is_checkout_command(message):
-            cart = get_or_create_cart(session.phone_number, session.selected_business_id, db)
+            cart = get_or_create_cart(
+                session.phone_number, session.selected_business_id, db
+            )
             if not cart.items:
                 return "Your cart is empty — add something first!", None
             session.pending_action = "awaiting_checkout_info"
@@ -641,7 +717,9 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
         return product_text, None
 
     if session.pending_action == "awaiting_checkout_info":
-        cart = get_or_create_cart(session.phone_number, session.selected_business_id, db)
+        cart = get_or_create_cart(
+            session.phone_number, session.selected_business_id, db
+        )
         if not cart.items:
             session.pending_action = "post_add"
             db.commit()
@@ -649,14 +727,16 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
 
         name, contact = parse_name_and_contact(message)
         if not contact:
-            contact = session.phone_number  # always known — it's the channel they messaged on
+            contact = (
+                session.phone_number
+            )  # always known — it's the channel they messaged on
 
         business = db.query(User).get(session.selected_business_id)
         customer = (
             db.query(Customer)
             .filter(
                 Customer.phone_number == session.phone_number,
-                Customer.user_id == session.selected_business_id,
+                Customer.business_id == session.selected_business_id,
             )
             .first()
         )
@@ -665,14 +745,14 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
             # have made this row, but don't let a missing Customer block checkout.
             customer = Customer(
                 phone_number=session.phone_number,
-                user_id=session.selected_business_id,
+                business_id=session.selected_business_id,
                 name=name,
             )
             db.add(customer)
             db.commit()
             db.refresh(customer)
 
-        #summary_before_clear = format_cart_summary(cart)
+        # summary_before_clear = format_cart_summary(cart)
         orders = create_orders_from_cart(cart, business, customer, name, contact, db)
 
         cart.items = []
@@ -682,7 +762,7 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
         db.commit()
 
         order_ref = str(orders[0].order_group_id)[:8] if orders else "N/A"
-        
+
         items_lines = [
             f"- {o.quantity}x {o.snapshot_product_name} - Ksh {o.total_amount:.2f} - _{o.status.value}_"
             for o in orders
@@ -708,7 +788,11 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
     return "Sorry, something went wrong. Please reply 'menu' to start over.", None
 
 
-def format_product_list_for_business(db: Session, business_id: int, category_name: str) -> str:
+def format_product_list_for_business(
+    db: Session,
+    business_id: uuid.UUID,
+    category_name: str,
+) -> str:
     """Public wrapper so router.py can resend the product list (e.g. after
     an 'Add More' tap) without duplicating _format_product_list's logic."""
     products = get_products_for_business_category(db, business_id, category_name)

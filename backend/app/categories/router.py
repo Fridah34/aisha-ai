@@ -2,18 +2,20 @@
 Categories API — lets the business owner group products into categories
 that AISHA presents to WhatsApp customers as a browsable list.
 
-AUTH: user_id now comes from the authenticated session (get_current_user), never from the client.
+AUTH: business_id comes from the authenticated session (get_current_user), never from the client.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 
-from app.database import get_db
-from app.auth.dependencies import get_current_user
-from app.models import User
-from app.categories import crud
-from app.categories.schemas import CategoryCreate, CategoryUpdate, CategoryResponse
+import uuid
+
 from app.ai.cache import invalidate_business_cache
+from app.auth.dependencies import get_current_user
+from app.categories import crud
+from app.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
+from app.database import get_db
+from app.models import User
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -29,7 +31,7 @@ def list_categories(
 
 @router.get("/{category_id}", response_model=CategoryResponse)
 def get_category(
-    category_id: int,
+    category_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -65,7 +67,7 @@ def add_category(
 
 @router.put("/{category_id}", response_model=CategoryResponse)
 def edit_category(
-    category_id: int,
+    category_id: uuid.UUID,
     updates: CategoryUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -89,7 +91,7 @@ def edit_category(
 
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_category(
-    category_id: int,
+    category_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

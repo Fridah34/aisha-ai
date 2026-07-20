@@ -1,0 +1,4 @@
+raw_uploads/*
+!raw_uploads/.gitkeep
+clean_wiki/*
+!clean_wiki/.gitkeep

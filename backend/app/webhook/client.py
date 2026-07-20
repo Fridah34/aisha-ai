@@ -18,9 +18,9 @@ def _get_client() -> Client:
     if not sid or not token:
         raise ValueError("TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN not set in .env")
     return Client(sid, token)
-    
-    
-def send_text_message(to_phone: str, message: str, media_url:str =None) -> bool:
+
+
+def send_text_message(to_phone: str, message: str, media_url: str = None) -> bool:
     """
     Sends a plain text WhatsApp message to a customer.
 
@@ -36,17 +36,17 @@ def send_text_message(to_phone: str, message: str, media_url:str =None) -> bool:
         if not from_number:
             print("[Twilio] TWILIO_WHATSAPP_NUMBER not set in .env")
             return False
-        
+
         params = {
-           "from_": f"whatsapp:{from_number}",
-            "to" : f"whatsapp:{to_phone}",
-            "body" :message,
+            "from_": f"whatsapp:{from_number}",
+            "to": f"whatsapp:{to_phone}",
+            "body": message,
         }
-        
+
         if media_url:
-            params["media_url"]= [media_url]
+            params["media_url"] = [media_url]
             print(f"[TWILIO] Sending with image: {media_url}")
-        
+
         msg = client.messages.create(**params)
         print(f"[TWILIO] Sent to {to_phone} - SID: {msg.sid}")
         return True
@@ -58,14 +58,15 @@ def send_text_message(to_phone: str, message: str, media_url:str =None) -> bool:
     except Exception as e:
         print(f"[Twilio] Unexpected error: {e}")
         return False
-    
+
+
 def send_list_picker(to_phone: str, body_text: str, items: list[str]) -> bool:
     """
     Sends a tappable list-picker menu(up to 10 items) using the aisha_list_menu_fridah template. `items` should be plain labels
     e.g. ["Dress", "Jeans", "Shawl"] - the template's {{2}}..{{11}}
     variables are filled positionally, so items[0] becomes {{2}}
     (opt_1), items[1] becomes {{3}} (opt_2), and so on.
-    
+
     Twilio's list-picker template requires exactly 10 item variables
     to have been defined at creation time — if you send fewer than 10
     real items, the leftover {{N}} slots are filled with a single
@@ -147,14 +148,15 @@ def send_quick_reply(to_phone: str, body_text: str) -> bool:
     except Exception as e:
         print(f"[Twilio] Unexpected error: {e}")
         return False
-    
+
+
 def send_browse_more_prompt(to_phone: str, body_text: str) -> bool:
     """
     Sends the post-checkout 'Browse more' quick-reply button using the
     aisha_post_checkout_fridah template. Only {{1}} (the body text) is
     variable — the single button's label/id ("Browse more" / browse_more)
     was fixed at template-creation time.
- 
+
     Falls back to plain text with a 'menu' hint if TWILIO_BROWSE_MORE_SID
     isn't set, so a missing/misconfigured template never silently drops
     the order confirmation — the customer always hears back either way.
@@ -165,15 +167,15 @@ def send_browse_more_prompt(to_phone: str, body_text: str) -> bool:
             to_phone,
             body_text + "\n\nReply 'menu' to see our other categories! 🛍️",
         )
- 
+
     try:
         client = _get_client()
         from_number = TWILIO_WHATSAPP_NUMBER or ""
- 
+
         if not from_number:
             print("[Twilio] TWILIO_WHATSAPP_NUMBER not set in .env")
             return False
- 
+
         msg = client.messages.create(
             from_=f"whatsapp:{from_number}",
             to=f"whatsapp:{to_phone}",
@@ -182,13 +184,11 @@ def send_browse_more_prompt(to_phone: str, body_text: str) -> bool:
         )
         print(f"[TWILIO] Sent browse-more prompt to {to_phone} - SID: {msg.sid}")
         return True
- 
+
     except TwilioRestException as e:
         print(f"[Twilio] API error {e.code}: {e.msg}")
         return False
- 
+
     except Exception as e:
         print(f"[Twilio] Unexpected error: {e}")
         return False
- 
-

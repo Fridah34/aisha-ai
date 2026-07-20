@@ -1,8 +1,8 @@
 # ==============================================================================
 # AUTHENTICATION ROUTER MODULE
 # ==============================================================================
-# This module controls the web entry gates for the application. It receives 
-# incoming requests for user registration, logins, and token management, 
+# This module controls the web entry gates for the application. It receives
+# incoming requests for user registration, logins, and token management,
 # coordinates with the database workers, and returns the secure responses.
 # ==============================================================================
 
@@ -16,6 +16,7 @@ from app.auth.utils import (
 )
 from app.crud import get_user_by_email
 from app.database import get_db
+from app.models import BusinessType as ModelBusinessType
 from app.models import User
 from app.schema import (
     UserGoogleRegister,
@@ -26,19 +27,19 @@ from app.schema import (
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-#===================ENVIRONMENT CONFIG====================
+# ===================ENVIRONMENT CONFIG====================
 # Cookies marked `secure=True` are only stored/sent by browsers over HTTPS.
 # Local dev runs on plain HTTP (localhost:5173 / 127.0.0.1:8000), so `secure`
 # must be False there or the browser silently drops the cookie entirely.
 # Set ENVIRONMENT=production in your deployment's .env once real HTTPS is in place.
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 
-#===================ROUTER INITIALIZATION====================
+# ===================ROUTER INITIALIZATION====================
 
 router = APIRouter(
-    prefix = "/auth",
-    tags = ["Authentication"],
-    responses = {
+    prefix="/auth",
+    tags=["Authentication"],
+    responses={
         400: {"description": "Bad Request - Invalid Input"},
         401: {"description": "Unauthorized - Invalid credentials"},
         409: {"description": "Conflict - Email already exists"},
@@ -46,7 +47,8 @@ router = APIRouter(
     },
 )
 
-#==============REGISTER ENDPOINT====================
+# ==============REGISTER ENDPOINT====================
+
 
 @router.post(
     "/register",
@@ -54,12 +56,9 @@ router = APIRouter(
     summary="Register new Business Owner",
     description="Create new business account with email and password",
 )
-def register(
-    user_data:UserRegister,
-    db:Session = Depends(get_db) 
-):
+def register(user_data: UserRegister, db: Session = Depends(get_db)):
     # check if email already exist
-    existing_user = get_user_by_email(db,user_data.email)
+    existing_user = get_user_by_email(db, user_data.email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -67,23 +66,24 @@ def register(
             headers={"X-Error-Code": "EMAIL_ALREADY_EXISTS"},
         )
     try:
-        # create temporary user object with hashed password for validation 
+        # create temporary user object with hashed password for validation
         new_user = User(
             email=user_data.email,
             name=user_data.name,
             business_name=user_data.business_name,
-            business_type=user_data.business_type,
+            business_type=ModelBusinessType(user_data.business_type.value),
             hashed_password=hash_password(user_data.password),
         )
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
         return {"user": UserResponse.model_validate(new_user)}
-    
+
     except Exception as e:
         db.rollback()
         print("\n ACTUAL REGISTRATION ERROR:", str(e))
         import traceback
+
         traceback.print_exc()
         print("===========================\n")
         raise HTTPException(
@@ -91,7 +91,9 @@ def register(
             detail="Failed to create account .Please try again",
         )
 
-#==============GOOGLE REGISTER ENDPOINT====================
+
+# ==============GOOGLE REGISTER ENDPOINT====================
+
 
 @router.post(
     "/register/google",
@@ -100,12 +102,9 @@ def register(
     summary="Register with Google OAuth",
     description="Create account using Google OAuth credentials",
 )
-def register_google(
-    user_data:UserGoogleRegister,
-    db:Session = Depends(get_db)
-):
+def register_google(user_data: UserGoogleRegister, db: Session = Depends(get_db)):
     # check if email already exist
-    existing_user = get_user_by_email(db,user_data.email)
+    existing_user = get_user_by_email(db, user_data.email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -129,9 +128,10 @@ def register_google(
 
         return new_user
     except Exception as e:
-        db.rollback() #undo any changes made during the creation process
+        db.rollback()  # undo any changes made during the creation process
         print("\n ACTUAL REGISTRATION ERROR:", str(e))
         import traceback
+
         traceback.print_exc()
         print("=========================================\n")
         raise HTTPException(
@@ -139,58 +139,60 @@ def register_google(
             detail="Failed to create account .Please try again",
         )
 
-#============LOGIN ENDPOINT==========
+
+# ============LOGIN ENDPOINT==========
+
 
 @router.post(
     "/login",
     summary="Loginwith email & Password",
     description="Authenticate and receive JWT access token",
-) 
+)
 def login(
     credentials: UserLogin,
     response: Response,
     db: Session = Depends(get_db),
-):  
-# Step 1: Find User by email
-  user = get_user_by_email(db, credentials.email)
+):
+    # Step 1: Find User by email
+    user = get_user_by_email(db, credentials.email)
 
-  if not user:
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid email or password",
-        headers={"X-Error-Code": "INVALID_CREDENTIALS"},
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"X-Error-Code": "INVALID_CREDENTIALS"},
+        )
+    # Step 2: Verify Password
+    if not verify_password(credentials.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"X-Error-Code": "INVALID_CREDENTIALS"},
+        )
+
+    # Step 3: Check if active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is not active",
+            headers={"X-Error-Code": "ACCOUNT_NOT_ACTIVE"},
+        )
+
+    # Step 4: Create Access Token
+    access_token = create_access_token(data={"sub": user.email})
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=1800,
     )
-# Step 2: Verify Password
-  if not verify_password(credentials.password,user.hashed_password):
-      raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid email or password",
-        headers={"X-Error-Code": "INVALID_CREDENTIALS"},
-    )
+    return {"user": UserResponse.model_validate(user)}
 
-#Step 3: Check if active
-  if not user.is_active:
-       raise HTTPException(
-         status_code=status.HTTP_403_FORBIDDEN,
-         detail="Account is not active",
-         headers={"X-Error-Code": "ACCOUNT_NOT_ACTIVE"},
-    )
 
-# Step 4: Create Access Token
-  access_token = create_access_token(data={"sub":user.email})
-  response.set_cookie(
-      key="access_token",
-      value=access_token,
-      httponly=True,
-      secure=IS_PRODUCTION,
-      samesite="lax",
-      max_age=1800,
-  )
-  return {
-      "user": UserResponse.model_validate(user)
-}
+# =============GET ME ENDPOINT====================
 
-#=============GET ME ENDPOINT====================
 
 @router.get(
     "/me",
@@ -198,44 +200,39 @@ def login(
     summary="Get Current User",
     description="Retrieve authenticated users information",
 )
-def get_me(
-    current_user: User = Depends(get_current_user)
-):
+def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
-#=============LOGOUT ENDPOINT====================
+
+# =============LOGOUT ENDPOINT====================
+
 
 @router.post(
     "/logout",
     summary="Logout User",
     description="Logout and Invalidate session",
 )
-def logout(
-    response: Response,
-    current_user: User = Depends(get_current_user)
-):
+def logout(response: Response, current_user: User = Depends(get_current_user)):
     response.delete_cookie(
         key="access_token",
         httponly=True,
         secure=IS_PRODUCTION,
         samesite="lax",
     )
-    return{
-        "message":"Logged out successfully"
-    }
+    return {"message": "Logged out successfully"}
 
-#==========VERIFY TOKEN ENDPOINT====================
+
+# ==========VERIFY TOKEN ENDPOINT====================
+
 
 @router.post(
     "/verify-token",
     summary="Verify Token",
     description="Check if JWT token is valid",
 )
-def verify_token(
-    current_user: User = Depends(get_current_user)
-):
-    return{
+def verify_token(current_user: User = Depends(get_current_user)):
+    return {
         "is_valid": True,
         "user": UserResponse.model_validate(current_user),
-        "message":"Token is valid",
+        "message": "Token is valid",
     }

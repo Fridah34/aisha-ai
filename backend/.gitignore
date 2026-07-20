@@ -1,4 +1,5 @@
 # Environment variables
+.venv/
 .env
 .env.*
 !.env.example
@@ -23,3 +24,29 @@ Thumbs.db
 
 # Logs
 *.log
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+

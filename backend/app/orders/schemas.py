@@ -1,13 +1,14 @@
-from pydantic import BaseModel
-from decimal import Decimal
+import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from app.models import OrderStatus
+from pydantic import BaseModel
 
 
 class OrderItemResponse(BaseModel):
-    id: int
-    product_id: int | None
+    id: uuid.UUID
+    product_id: uuid.UUID | None
     product_name: str | None
     quantity: int
     total_amount: Decimal
@@ -22,6 +23,7 @@ class OrderGroupResponse(BaseModel):
     backed by N Order rows sharing one order_group_id. Legacy rows with
     no group id (pre-migration) each render as their own single-item
     group."""
+
     order_ref: str
     customer_name: str | None
     customer_phone: str | None
