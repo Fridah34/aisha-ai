@@ -1,13 +1,14 @@
-from pydantic import BaseModel
-from decimal import Decimal
+import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from app.models import OrderStatus
+from pydantic import BaseModel
 
 
 class OrderItemResponse(BaseModel):
-    id: int
-    product_id: int | None
+    id: uuid.UUID
+    product_id: uuid.UUID | None
     product_name: str | None
     quantity: int
     total_amount: Decimal

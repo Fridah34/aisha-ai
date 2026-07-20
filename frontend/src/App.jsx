@@ -10,7 +10,7 @@
  */
 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './hooks/useAuth'
+import { useAuth } from './hooks/useAuth'
 import ProtectedRoute, { GuestRoute } from './components/ProtectedRoute'
 import LoadingSpinner from './components/LoadingSpinner'
 
@@ -102,11 +102,9 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <AppContent />
-      </Router>
-    </AuthProvider>
+    <Router>
+      <AppContent />
+    </Router>
   );
 }
     

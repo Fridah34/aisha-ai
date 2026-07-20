@@ -39,6 +39,15 @@ export const AuthProvider = ({children}) => {
     const [loading, setLoading] = useState(true); //Tracks if the  app is busy checking the login status
     const [error,setError] = useState(null);  //Captures errors messages (e.g"Login failed")
 
+    const persistSession = useCallback((userProfile) => {
+        if (!userProfile) return;
+        setUser(userProfile);
+        localStorage.setItem('user', JSON.stringify(userProfile));
+        if (userProfile.id) {
+            localStorage.setItem('business_id', userProfile.id);
+        }
+    }, []);
+
 
     //=====================================================
     //AUTOMATIC SESSION CHECK(PAGE LOAD EVENT)
@@ -48,16 +57,19 @@ export const AuthProvider = ({children}) => {
         const storedUser = localStorage.getItem('user');
         //if we find saved keys in the browser restore them into our active memory state
         if (storedUser) {
-            setUser(JSON.parse(storedUser));
+            const parsedUser = JSON.parse(storedUser);
+            persistSession(parsedUser);
         }
         setLoading(false); //Done checking the local storage
-    }, []);
+    }, [persistSession]);
 
 //============================================================
 //HELPER METHOD (WIPING SESSION DATA)
 //============================================================
 const clearSession = useCallback(() => {
     localStorage.removeItem('user');
+    localStorage.removeItem('business_id');
+    localStorage.removeItem('user_id');
     setToken(null);
     setUser(null);
 }, []);
@@ -76,8 +88,9 @@ const signup = useCallback(async (credentials) => {
             skipAuth: true,
             withCredentials: true,
         });
-
-        return{ success: true, user: data.user || data };
+        const userProfile = data.user || data;
+        persistSession(userProfile);
+        return{ success: true, user: userProfile };
     } catch (err) {
         const errorMessage = parseFastApiError(err, 'Signup failed');
         setError(errorMessage);
@@ -85,7 +98,7 @@ const signup = useCallback(async (credentials) => {
     } finally {
         setLoading(false);
     }
-}, []);
+}, [persistSession]);
 
 //=============================================================
 //USER LOGIN(VERIFICATION EVENT)
@@ -100,15 +113,12 @@ const login = useCallback(async (credentials) => {
             withCredentials: true,
         });
 
+        const userProfile = data.user || data;
         if (data.access_token) {
             setToken(data.access_token);
-            setUser(data.user);
-            localStorage.setItem('user', JSON.stringify(data.user));
-        } else if (data.user) {
-            setUser(data.user);
-            localStorage.setItem('user', JSON.stringify(data.user));
         }
-        return { success: true, user: data.user || data };
+        persistSession(userProfile);
+        return { success: true, user: userProfile };
     } catch (err) {
         const errorMessage = parseFastApiError(err, 'Login failed');
         setError(errorMessage);
@@ -116,7 +126,7 @@ const login = useCallback(async (credentials) => {
     } finally {
         setLoading(false);
     }
-}, []);
+}, [persistSession]);
 
 //=============================================================
 //USER LOGOUT (DEACTIVATION EVENT)

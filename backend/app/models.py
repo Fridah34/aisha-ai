@@ -64,10 +64,10 @@ class HandoverStatus(enum.Enum):
 
 
 class BusinessType(enum.Enum):
-    RETAIL = "RETAIL"
-    FASHION = "FASHION"
-    SERVICES = "SERVICES"
-    FOOD = "FOOD"
+    retail = "retail"
+    fashion = "fashion"
+    services = "services"
+    food = "food"
 
 
 # ==============================================================================
@@ -85,8 +85,8 @@ class User(Base):
     business_name: Mapped[str] = mapped_column(String(150), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     knowledge_base_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    business_type: Mapped[BusinessType] = mapped_column(EnumSQL(BusinessType), default=BusinessType.RETAIL, nullable=False)
-    meta_phone_number_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    business_type: Mapped[BusinessType] = mapped_column(EnumSQL(BusinessType), default=BusinessType.retail, nullable=False)
+    whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     whatsapp_phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

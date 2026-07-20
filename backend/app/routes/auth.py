@@ -16,6 +16,7 @@ from app.auth.utils import (
 )
 from app.crud import get_user_by_email
 from app.database import get_db
+from app.models import BusinessType as ModelBusinessType
 from app.models import User
 from app.schema import (
     UserGoogleRegister,
@@ -72,7 +73,7 @@ def register(
             email=user_data.email,
             name=user_data.name,
             business_name=user_data.business_name,
-            business_type=user_data.business_type,
+            business_type=ModelBusinessType(user_data.business_type.value),
             hashed_password=hash_password(user_data.password),
         )
         db.add(new_user)

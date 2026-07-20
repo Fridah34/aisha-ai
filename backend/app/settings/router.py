@@ -6,7 +6,7 @@ These two fields directly control how AISHA behaves:
 - knowledge_base_text: injected into every prompt as business context
 - business_type: selects the action flow (retail / services / general)
 
-AUTH NOTE: user_id passed explicitly for now.
+AUTH NOTE: business_id passed explicitly for now.
 Replace with Depends(get_current_user) when Eve's JWT auth is ready.
 """
 import uuid

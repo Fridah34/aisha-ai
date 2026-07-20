@@ -1,7 +1,7 @@
 """
 Products API= lets the business owner manage their catalogue without manually inserting rows into postgreSQL.
 
-AUTH NOTE:user_id is currently passed explicitly by the caller.
+AUTH NOTE: business_id is currently passed explicitly by the caller.
 
 """
 import os

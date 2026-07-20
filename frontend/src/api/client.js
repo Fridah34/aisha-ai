@@ -8,21 +8,37 @@
 
 const BASE = '/api'
 
+// UUID v4 regex pattern
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export function getCurrentBusinessId() {
+  const businessId = localStorage.getItem('business_id')
   const storedUser = localStorage.getItem('user')
 
-  if (!storedUser) {
-    throw new Error('Your session has expired. Please sign in again.')
+  if (!businessId && storedUser) {
+    const parsedUser = JSON.parse(storedUser)
+    if (parsedUser?.id && UUID_REGEX.test(parsedUser.id)) {
+      localStorage.setItem('business_id', parsedUser.id)
+      return parsedUser.id
+    }
   }
 
-  try {
-    const user = JSON.parse(storedUser)
-    if (typeof user?.id === 'string' && user.id) return user.id
-  } catch {
-    // The session error below gives the user an actionable recovery path.
+  // Validate UUID format
+  if (businessId && UUID_REGEX.test(businessId)) {
+    return businessId
   }
 
-  throw new Error('Your account is missing a valid business ID. Please sign in again.')
+  // Clear stale keys on invalid/missing business_id
+  localStorage.removeItem('user_id')
+  localStorage.removeItem('business_id')
+  localStorage.removeItem('user')
+
+  // Redirect to login if not already there
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+
+  throw new Error('Your session has expired. Please sign in again.')
 }
 
 export async function apiFetch(path, options = {}) {
@@ -40,4 +56,11 @@ export async function apiFetch(path, options = {}) {
   if (res.status === 204) return null
 
   return res.json()
+}
+
+export function getWebSocketUrl() {
+  const apiBase =
+    import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+  return apiBase.replace(/^http/, "ws") + "/ws";
 }

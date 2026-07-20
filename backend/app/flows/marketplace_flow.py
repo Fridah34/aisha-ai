@@ -1,10 +1,18 @@
 import re
 import uuid
-from sqlalchemy.orm import Session
-from sqlalchemy import String, func
-from app.models import User, Category, Product, Order, Customer
-from app.models import MarketplaceSession, Cart
 from datetime import datetime, timedelta, timezone
+
+from app.models import (
+    Cart,
+    Category,
+    Customer,
+    MarketplaceSession,
+    Order,
+    Product,
+    User,
+)
+from sqlalchemy import String, func
+from sqlalchemy.orm import Session
 
 SESSION_TIMEOUT_MINUTES = 30
 
@@ -106,7 +114,7 @@ def reset_to_menu(session: MarketplaceSession, db: Session) -> None:
     db.commit()
 
 
-def get_or_create_cart(phone_number: str, business_id: int, db: Session) -> Cart:
+def get_or_create_cart(phone_number: str, business_id: uuid.UUID, db: Session) -> Cart:
     cart = (
         db.query(Cart)
         .filter(Cart.phone_number == phone_number, Cart.business_id == business_id)
@@ -152,7 +160,7 @@ def get_businesses_by_category(db: Session, category_name: str) -> list[User]:
     reason as get_all_categories()."""
     return (
         db.query(User)
-        .join(Category, Category.user_id == User.id)
+        .join(Category, Category.business_id == User.id)
         .filter(
             Category.name == category_name,
             Category.is_active,
@@ -164,24 +172,36 @@ def get_businesses_by_category(db: Session, category_name: str) -> list[User]:
     )
 
 
-def get_categories_for_business(db: Session, user_id: int) -> list[Category]:
+def get_categories_for_business(db: Session, business_id: uuid.UUID) -> list[Category]:
     return (
         db.query(Category)
-        .filter(Category.user_id == user_id, Category.is_active)
+        .filter(Category.business_id == business_id, Category.is_active)
         .order_by(Category.display_order)
         .all()
     )
 
 
-def get_products_for_category(db: Session, user_id: int, category_id: int) -> list[Product]:
+def get_products_for_category(
+    db: Session,
+    business_id: uuid.UUID,
+    category_id: uuid.UUID,
+) -> list[Product]:
     return (
         db.query(Product)
-        .filter(Product.user_id == user_id, Product.category_id == category_id, Product.is_available)
+        .filter(
+            Product.business_id == business_id,
+            Product.category_id == category_id,
+            Product.is_available,
+        )
         .all()
     )
 
 
-def get_products_for_business_category(db: Session, business_id: int, category_name: str) -> list[Product]:
+def get_products_for_business_category(
+    db: Session,
+    business_id: uuid.UUID,
+    category_name: str,
+) -> list[Product]:
     """Finds this specific business's Category row matching the name the
     customer picked at the top-level menu, then returns its products.
     Needed because Category is per-business — the same name ('Dresses')
@@ -189,7 +209,7 @@ def get_products_for_business_category(db: Session, business_id: int, category_n
     category = (
         db.query(Category)
         .filter(
-            Category.user_id == business_id,
+            Category.business_id == business_id,
             Category.name == category_name,
             Category.is_active,
         )
@@ -220,7 +240,12 @@ def _format_product_list(products: list[Product]) -> str:
     return "\n".join(lines)
 
 
-def resolve_product_choice(business_id: int, category_name: str, message: str, db: Session) -> Product | None:
+def resolve_product_choice(
+    business_id: uuid.UUID,
+    category_name: str,
+    message: str,
+    db: Session,
+) -> Product | None:
     """Matches a customer's reply (number or name) against the product list
     they were just shown for this business/category. Returns None if no
     match — caller should then let the message flow through normally
@@ -340,7 +365,7 @@ def create_orders_from_cart(cart: Cart, business: User, customer: Customer, name
             order_group_id=group_id,
             customer_id=customer.id,
             product_id=item["product_id"],
-            user_id=business.id,
+            business_id=business.id,
             quantity=item["qty"],
             total_amount=item["qty"] * item["unit_price"],
             snapshot_customer_name=name,
@@ -656,7 +681,7 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
             db.query(Customer)
             .filter(
                 Customer.phone_number == session.phone_number,
-                Customer.user_id == session.selected_business_id,
+                Customer.business_id == session.selected_business_id,
             )
             .first()
         )
@@ -665,7 +690,7 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
             # have made this row, but don't let a missing Customer block checkout.
             customer = Customer(
                 phone_number=session.phone_number,
-                user_id=session.selected_business_id,
+                business_id=session.selected_business_id,
                 name=name,
             )
             db.add(customer)
@@ -708,7 +733,11 @@ def handle_marketplace_step(session: MarketplaceSession, message: str, db: Sessi
     return "Sorry, something went wrong. Please reply 'menu' to start over.", None
 
 
-def format_product_list_for_business(db: Session, business_id: int, category_name: str) -> str:
+def format_product_list_for_business(
+    db: Session,
+    business_id: uuid.UUID,
+    category_name: str,
+) -> str:
     """Public wrapper so router.py can resend the product list (e.g. after
     an 'Add More' tap) without duplicating _format_product_list's logic."""
     products = get_products_for_business_category(db, business_id, category_name)

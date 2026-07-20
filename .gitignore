@@ -43,3 +43,5 @@ pip-delete-this-directory.txt
 # 5. OS Specific Files
 .DS_Store
 Thumbs.db
+
+.history

@@ -2,19 +2,20 @@
 Orders API — lets the business owner see what's been ordered through
 AISHA on WhatsApp, and update per-item fulfilment status.
 
-AUTH: user_id comes from the authenticated session (get_current_user),
+AUTH: business_id comes from the authenticated session (get_current_user),
 never from the client. Orders themselves are never created here — they
 come exclusively from the WhatsApp checkout flow
 (app.flows.marketplace_flow.create_orders_from_cart).
 """
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+import uuid
 
-from app.database import get_db
 from app.auth.dependencies import get_current_user
+from app.database import get_db
 from app.models import User
 from app.orders import crud
 from app.orders.schemas import OrderGroupResponse, OrderItemResponse, OrderStatusUpdate
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
@@ -54,7 +55,7 @@ def list_orders(
 
 @router.patch("/{order_id}/status", response_model=OrderItemResponse)
 def set_order_status(
-    order_id: int,
+    order_id: uuid.UUID,
     payload: OrderStatusUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
