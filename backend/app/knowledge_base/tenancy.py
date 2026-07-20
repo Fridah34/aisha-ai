@@ -6,17 +6,21 @@ from pathlib import Path
 
 # --- CUSTOM PLATFORM ALARM SYSTEMS (EXCEPTIONS) ---
 
+
 class TenantPathError(ValueError):
     """Triggered when a user tries to break out of their folder or sends a fake path."""
+
     pass
 
 
 class TenantNotProvisionedError(FileNotFoundError):
     """Triggered when someone tries to read files before the business folder is created."""
+
     pass
 
 
 # --- THE HIGH-SECURITY RESOLVER CLASS ---
+
 
 class TenantFileResolver:
     def __init__(self, base_dir: Path | str):
@@ -37,13 +41,13 @@ class TenantFileResolver:
         """Looks for a business's existing folder on the hard drive to read it."""
         # Join the base path with the verified tenant folder name
         candidate = self.base_dir / self._tenant_dir_name(business_id)
-        
+
         # We use .resolve(strict=False) or resolve normal paths safely
         resolved = candidate.resolve()
-        
+
         # Verify that this folder address hasn't escaped our main system base directory
         self._assert_within_base(resolved)
-        
+
         # If the folder doesn't physically exist yet, throw a clean 'Not Provisioned' error
         if not resolved.is_dir():
             raise TenantNotProvisionedError(
@@ -54,16 +58,18 @@ class TenantFileResolver:
     def ensure_tenant_root(self, business_id: uuid.UUID | str) -> Path:
         """The Lazy Provisioner: Automatically creates the folder on disk if it is missing."""
         candidate = self.base_dir / self._tenant_dir_name(business_id)
-        
+
         # FIX: Resolve the path FIRST to guarantee security before modifying the filesystem
         resolved = candidate.resolve()
         self._assert_within_base(resolved)
-        
+
         # Now it is mathematically safe to physically create the folder
         resolved.mkdir(parents=True, exist_ok=True)
         return resolved
 
-    def resolve_within_tenant(self, business_id: uuid.UUID | str, relative_path: str) -> Path:
+    def resolve_within_tenant(
+        self, business_id: uuid.UUID | str, relative_path: str
+    ) -> Path:
         """Takes a filename and securely maps its path inside the tenant's folder container."""
         # Ensure the tenant folder exists and grab its root path
         root = self.ensure_tenant_root(business_id)
@@ -75,7 +81,7 @@ class TenantFileResolver:
 
         # Mix the tenant root with the user's filename and get the absolute final destination
         candidate = (root / rel).resolve()
-        
+
         # THE CORE CAGE: Verify mathematically that this final path lives INSIDE the tenant's root folder
         self._assert_within(candidate, root)
         return candidate

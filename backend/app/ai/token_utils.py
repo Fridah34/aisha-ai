@@ -16,7 +16,7 @@ def truncate_history_to_token_limit(
     history: list,
     system_prompt: str,
     max_total_tokens: int = 6000,
-    max_messages : int =20
+    max_messages: int = 20,
 ) -> list:
     """
     Strategy: always keep the most recent messages.

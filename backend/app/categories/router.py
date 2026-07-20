@@ -4,6 +4,7 @@ that AISHA presents to WhatsApp customers as a browsable list.
 
 AUTH: business_id comes from the authenticated session (get_current_user), never from the client.
 """
+
 import uuid
 
 from app.ai.cache import invalidate_business_cache

@@ -30,7 +30,7 @@ class Settings:
 
     # 2. Guard the database fallback behavior
     _db_url = os.getenv("DATABASE_URL")
-    
+
     if not _db_url:
         if ENVIRONMENT == "development":
             # Safe local fallback restricted strictly to development environments

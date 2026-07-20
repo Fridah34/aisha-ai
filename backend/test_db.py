@@ -12,7 +12,9 @@ try:
     Base.metadata.create_all(bind=engine)
     print(" Database tables created successfully inside PostgreSQL!")
 except Exception as e:
-    print(" CRITICAL ERROR: Table creation failed. Check your models.py attributes or relationship fields!")
+    print(
+        " CRITICAL ERROR: Table creation failed. Check your models.py attributes or relationship fields!"
+    )
     print(str(e))
     sys.exit(1)
 
@@ -24,12 +26,16 @@ try:
         "business_id": uuid.uuid4(),
         "role": "USER",
         "content": "Niaje maze, mko na mawaridi leo?",
-        "language": "EN"
+        "language": "EN",
     }
     validated_schema = schema.ConversationCreate(**mock_payload)
-    print(f"Schema validation passed! Parsed text language: '{validated_schema.language.value}'")
+    print(
+        f"Schema validation passed! Parsed text language: '{validated_schema.language.value}'"
+    )
 except Exception as e:
-    print("CRITICAL ERROR: Pydantic schema instantiation failed. Check your schemas.py declarations!")
+    print(
+        "CRITICAL ERROR: Pydantic schema instantiation failed. Check your schemas.py declarations!"
+    )
     print(str(e))
     sys.exit(1)
 

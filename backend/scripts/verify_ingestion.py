@@ -36,11 +36,11 @@ Items can be returned within 7 days if unused and in original packaging.
 
 async def run_ingestion_smoke_test() -> None:
     """Executes a live, self-cleaning background parsing and ingestion data load simulation."""
-    
+
     # Isolate filesystem writes to prevent polluting development data
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        
+
         async with async_session_factory() as session:
             # Step 1: Initialize PostgreSQL Row-Level Security connection settings context
             await KnowledgeBaseManager.set_tenant_context(session, TEST_BUSINESS_ID)
@@ -62,24 +62,40 @@ async def run_ingestion_smoke_test() -> None:
 
             # Step 2: Provision the sandboxed physical folder directories on disk
             tenant_dir = manager.resolver.ensure_tenant_root(TEST_BUSINESS_ID)
-            (tenant_dir / TEST_SOURCE_FILE).write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+            (tenant_dir / TEST_SOURCE_FILE).write_text(
+                SAMPLE_MARKDOWN, encoding="utf-8"
+            )
 
             # Step 3: Trigger the idempotent ingestion pipeline inside a safe transaction
             try:
-                chunks = await manager.ingest_document(TEST_BUSINESS_ID, TEST_SOURCE_FILE)
-                
+                chunks = await manager.ingest_document(
+                    TEST_BUSINESS_ID, TEST_SOURCE_FILE
+                )
+
                 # Step 4: Verify the indexed chunks (True Verification)
-                assert len(chunks) >= 2, "Failed to generate multiple chunks from markdown."
-                assert any("Shipping" in chunk.chunk_text for chunk in chunks), "Missing Shipping section."
-                assert any("Returns" in chunk.chunk_text for chunk in chunks), "Missing Returns section."
-                
+                assert len(chunks) >= 2, (
+                    "Failed to generate multiple chunks from markdown."
+                )
+                assert any("Shipping" in chunk.chunk_text for chunk in chunks), (
+                    "Missing Shipping section."
+                )
+                assert any("Returns" in chunk.chunk_text for chunk in chunks), (
+                    "Missing Returns section."
+                )
+
                 # Step 5: Print clean diagnostic telemetry metrics to the terminal
-                print(f"SUCCESS: Indexed {len(chunks)} chunk(s) for tenant {TEST_BUSINESS_ID}:\n")
+                print(
+                    f"SUCCESS: Indexed {len(chunks)} chunk(s) for tenant {TEST_BUSINESS_ID}:\n"
+                )
                 for chunk in chunks:
-                    print(f"File: {chunk.source_file} | Path: {getattr(chunk, 'section_path', 'N/A')}")
-                    print(f"Text: {chunk.chunk_text[:120].replace('\n', ' ')}{'...' if len(chunk.chunk_text) > 120 else ''}")
+                    print(
+                        f"File: {chunk.source_file} | Path: {getattr(chunk, 'section_path', 'N/A')}"
+                    )
+                    print(
+                        f"Text: {chunk.chunk_text[:120].replace('\n', ' ')}{'...' if len(chunk.chunk_text) > 120 else ''}"
+                    )
                     print("-" * 50)
-                    
+
             except IngestionRejectedError as exc:
                 print(f"INGESTION REJECTED BY SECURITY SUITE: {exc}")
             except Exception as exc:

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["WebSocket"])
 
+
 # Store active connections
 class ConnectionManager:
     def __init__(self):
@@ -89,11 +90,15 @@ async def websocket_endpoint(
             manager.active_connections[business_id] = set()
         manager.active_connections[business_id].add(websocket)
 
-        await websocket.send_text(json.dumps({
-            "type": "connection_established",
-            "business_id": str(business_id),
-            "message": "Connected to AISHA real-time updates"
-        }))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "connection_established",
+                    "business_id": str(business_id),
+                    "message": "Connected to AISHA real-time updates",
+                }
+            )
+        )
         print(f"Sent connection confirmation for business {business_id}")
 
         while True:
@@ -107,10 +112,14 @@ async def websocket_endpoint(
                         await websocket.send_text(json.dumps({"type": "pong"}))
                         print(f"Sent pong to business {business_id}")
                     elif message.get("type") == "test":
-                        await websocket.send_text(json.dumps({
-                            "type": "test_response",
-                            "message": f"Echo: {message.get('message')}"
-                        }))
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "test_response",
+                                    "message": f"Echo: {message.get('message')}",
+                                }
+                            )
+                        )
                 except json.JSONDecodeError:
                     if data == "ping":
                         await websocket.send_text("pong")
@@ -136,9 +145,12 @@ async def broadcast_status_change(
     customer_id: uuid.UUID,
     new_status: str,
 ):
-    await manager.broadcast_to_business(business_id, {
-        "type": "status_change",
-        "customer_id": str(customer_id),
-        "new_status": new_status,
-        "timestamp": asyncio.get_event_loop().time()
-    })
+    await manager.broadcast_to_business(
+        business_id,
+        {
+            "type": "status_change",
+            "customer_id": str(customer_id),
+            "new_status": new_status,
+            "timestamp": asyncio.get_event_loop().time(),
+        },
+    )

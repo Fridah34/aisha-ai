@@ -4,6 +4,7 @@ Pydantic schemas for the Categories API
 Same separation as products/schemas.py: the DB model defines storage,
 these schemas define the API contract.
 """
+
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -32,6 +33,7 @@ class CategoryResponse(BaseModel):
     single-item responses (create/update/get-by-id), where a live count
     isn't computed since only the list endpoint needs it for display.
     """
+
     id: uuid.UUID
     business_id: uuid.UUID
     name: str

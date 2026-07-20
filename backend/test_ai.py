@@ -9,14 +9,14 @@ products = [
         "name": "Nike Air Force 1",
         "price": 4500,
         "is_available": True,
-        "description": "Available in sizes 6-11, red and white"
+        "description": "Available in sizes 6-11, red and white",
     },
     {
         "name": "Adidas Samba",
         "price": 5200,
         "is_available": True,
-        "description": "Classic white, sizes 6-11"
-    }
+        "description": "Classic white, sizes 6-11",
+    },
 ]
 
 knowledge_base = """
@@ -31,9 +31,7 @@ Returns: Within 7 days with receipt
 system_prompt = build_system_prompt(business_name, products, knowledge_base)
 
 # Simulate a conversation
-conversation_history = [
-    {"role": "user", "content": "Habari, mna sneakers nyekundu?"}
-]
+conversation_history = [{"role": "user", "content": "Habari, mna sneakers nyekundu?"}]
 
 print("Testing AISHA AI...\n")
 print("=" * 50)
@@ -41,9 +39,7 @@ print("=" * 50)
 # Test 1 — English
 print("TEST 1: English customer")
 print("-" * 30)
-history_en = [
-    {"role": "user", "content": "Hi, what sneakers do you have?"}
-]
+history_en = [{"role": "user", "content": "Hi, what sneakers do you have?"}]
 print("Customer:", history_en[-1]["content"])
 response1 = get_ai_response(system_prompt, history_en)
 print("AISHA:", response1)
@@ -53,9 +49,7 @@ print()
 # Test 2 — Kiswahili
 print("TEST 2: Kiswahili customer")
 print("-" * 30)
-history_sw = [
-    {"role": "user", "content": "Habari, mna sneakers nyekundu?"}
-]
+history_sw = [{"role": "user", "content": "Habari, mna sneakers nyekundu?"}]
 print("Customer:", history_sw[-1]["content"])
 response2 = get_ai_response(system_prompt, history_sw)
 print("AISHA:", response2)
@@ -68,7 +62,7 @@ print("-" * 30)
 history_multi = [
     {"role": "user", "content": "What sneakers do you have?"},
     {"role": "assistant", "content": response1},
-    {"role": "user", "content": "How much is the Nike Air Force 1?"}
+    {"role": "user", "content": "How much is the Nike Air Force 1?"},
 ]
 print("Customer:", history_multi[-1]["content"])
 response3 = get_ai_response(system_prompt, history_multi)
@@ -82,7 +76,7 @@ print("-" * 30)
 history_order = [
     {"role": "user", "content": "Habari, mna sneakers nyekundu?"},
     {"role": "assistant", "content": response2},
-    {"role": "user", "content": "Ninataka kuorder Nike nyekundu size 8"}
+    {"role": "user", "content": "Ninataka kuorder Nike nyekundu size 8"},
 ]
 print("Customer:", history_order[-1]["content"])
 response4 = get_ai_response(system_prompt, history_order)

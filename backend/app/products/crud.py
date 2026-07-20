@@ -4,6 +4,7 @@ Kept separate from router.py so these functions can be tested directly
 or reused (e.g. called from a future bulk-import script) without
 spinning up an HTTP request.
 """
+
 import uuid
 
 from app.models import Product
@@ -22,7 +23,9 @@ def get_products_for_business(db: Session, business_id: uuid.UUID) -> list[Produ
     )
 
 
-def get_product_by_id(db: Session, product_id: uuid.UUID, business_id: uuid.UUID) -> Product | None:
+def get_product_by_id(
+    db: Session, product_id: uuid.UUID, business_id: uuid.UUID
+) -> Product | None:
     """
     Fetches a single product, scoped to the owning business.
     The business_id filter is deliberate — without it, business A

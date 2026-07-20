@@ -13,8 +13,8 @@ load_dotenv()
 try:
     redis_client = redis.from_url(
         os.getenv("REDIS_URL", "redis://localhost:6379"),
-        decode_responses = True,
-        ssl_cert_reqs = None
+        decode_responses=True,
+        ssl_cert_reqs=None,
     )
     redis_client.ping()
     print("Redis Connected successfully")
@@ -23,7 +23,8 @@ except Exception as e:
     print(f"Redis not available: {e} - running without cache")
     REDIS_AVAILABLE = False
     redis_client = None
-    
+
+
 # ─── PROMPT VERSIONING ─────────────────────────────────────────────────────
 # Hashes the actual bytecode of build_system_prompt so any edit to that
 # function automatically produces a new cache key. Old keys for the previous
@@ -33,13 +34,15 @@ except Exception as e:
 def get_prompt_version() -> str:
     """Returns an 8-char MD5 hash of the prompt builder function bytecode."""
     from app.ai.prompt_builder import build_system_prompt
+
     return hashlib.md5(build_system_prompt.__code__.co_code).hexdigest()[:8]
 
-    
+
 # ─── BUSINESS PROMPT CACHE ────────────────────────────────────────────────────
 # The business prompt contains the business name, all products,
 # and the knowledge base — it almost never changes.
 # We cache it for 1 hour so we don't hit PostgreSQL on every message.
+
 
 def get_cached_business_prompt(business_id: uuid.UUID):
     """
@@ -88,8 +91,11 @@ def invalidate_business_cache(business_id: uuid.UUID):
         print(f"✓ Cache invalidated for business {business_id}")
     except Exception as e:
         print(f"Redis delete error: {e}")
-        
-def invalidate_conversation_cache(customer_id: uuid.UUID, business_id: uuid.UUID) -> None:
+
+
+def invalidate_conversation_cache(
+    customer_id: uuid.UUID, business_id: uuid.UUID
+) -> None:
     """
     Clears cached conversation for one customer. Used during testing.
     """
@@ -98,14 +104,18 @@ def invalidate_conversation_cache(customer_id: uuid.UUID, business_id: uuid.UUID
     try:
         key = f"conv:{business_id}:{customer_id}"
         redis_client.delete(key)
-        print(f"Conversation cache cleared: customer {customer_id} / business {business_id}")
+        print(
+            f"Conversation cache cleared: customer {customer_id} / business {business_id}"
+        )
     except Exception as e:
-        print(f"Redis delete error: {e}")    
+        print(f"Redis delete error: {e}")
+
 
 # ─── CONVERSATION CACHE ───────────────────────────────────────────────────────
 # Active conversations are cached so we don't hit PostgreSQL
 # on every message during an ongoing chat.
 # Cache expires after 24 hours of inactivity.
+
 
 def get_cached_conversation(customer_id: uuid.UUID, business_id: uuid.UUID):
     """
@@ -133,7 +143,7 @@ def cache_conversation(
     customer_id: uuid.UUID,
     business_id: uuid.UUID,
     history: list,
-    ttl_seconds: int = 86400
+    ttl_seconds: int = 86400,
 ):
     """
     Stores conversation history in Redis for 24 hours.
@@ -148,7 +158,10 @@ def cache_conversation(
     except Exception as e:
         print(f"Redis conversation write error: {e}")
 
-def already_sent_image(customer_id: uuid.UUID, business_id: uuid.UUID, product_id: uuid.UUID) -> bool:
+
+def already_sent_image(
+    customer_id: uuid.UUID, business_id: uuid.UUID, product_id: uuid.UUID
+) -> bool:
     """
     Checks if a product image has already been sent to this customer.
     Used to prevent duplicate image sends on retried webhook deliveries.
@@ -159,7 +172,9 @@ def already_sent_image(customer_id: uuid.UUID, business_id: uuid.UUID, product_i
         key = f"img_sent:{business_id}:{customer_id}:{product_id}"
         exists = redis_client.exists(key)
 
-        print(f"[Redis] Checking image key: {key} -> {'already sent' if exists else 'not sent'}")
+        print(
+            f"[Redis] Checking image key: {key} -> {'already sent' if exists else 'not sent'}"
+        )
 
         return bool(exists)
 
@@ -193,7 +208,7 @@ def append_to_conversation_cache(
     customer_id: uuid.UUID,
     business_id: uuid.UUID,
     message: dict,
-    ttl_seconds: int = 86400
+    ttl_seconds: int = 86400,
 ):
     """
     Adds one message to the cached conversation.

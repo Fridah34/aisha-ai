@@ -34,7 +34,7 @@ async def run_prompt_pipeline_smoke_test() -> None:
                 merchant_name=TEST_MERCHANT_NAME,
                 customer_message=TEST_CUSTOMER_MESSAGE,
             )
-            
+
             # Step 3: Render the complete prompt string and verify security boundaries
             rendered = manager.render_and_verify(payload)
 
@@ -42,14 +42,20 @@ async def run_prompt_pipeline_smoke_test() -> None:
             elapsed_ms = (end_time - start_time) * 1000
 
             # Step 4: Verify the payload actually contains our requested components
-            assert TEST_MERCHANT_NAME in rendered, "Merchant name missing from rendered prompt."
+            assert TEST_MERCHANT_NAME in rendered, (
+                "Merchant name missing from rendered prompt."
+            )
             # The pipeline normalizes shorthand (e.g. "4k" -> "4000") before rendering,
             # so we assert against the normalized message rather than the raw literal.
             normalized_message = normalize_query_for_retrieval(TEST_CUSTOMER_MESSAGE)
-            assert normalized_message in rendered, "Customer message missing from rendered prompt."
+            assert normalized_message in rendered, (
+                "Customer message missing from rendered prompt."
+            )
             # Verify structural prompt boundaries (adjust these if your template uses different headers)
-            assert "SYSTEM" in rendered.upper() or "INSTRUCTION" in rendered.upper(), "System rules missing."
-            
+            assert "SYSTEM" in rendered.upper() or "INSTRUCTION" in rendered.upper(), (
+                "System rules missing."
+            )
+
             # Step 5: Output clean, summarized diagnostic telemetry
             print("\nSUCCESS: PIPELINE EXECUTED CLEANLY")
             print("-" * 40)
@@ -59,7 +65,7 @@ async def run_prompt_pipeline_smoke_test() -> None:
             print(f"Chunks Retrieved: {len(payload.retrieved_context)}")
             print(f"Execution Time:   {elapsed_ms:.0f} ms")
             print("-" * 40 + "\n")
-            
+
         except ValueError as exc:
             # Catch known application-level validation errors separately
             print(f"PIPELINE REJECTED PAYLOAD: {exc}")

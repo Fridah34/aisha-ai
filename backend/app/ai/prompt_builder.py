@@ -53,36 +53,37 @@ BUSINESS_FLOWS = {
     ),
 }
 
+
 def format_product_line(p: dict) -> str:
     "formats one product into a structured line for the AI system prompt."
     "Uses all the available fields so AISHA can answer size/color/duration questions instead of guessing form free text descriptions."
     line = f"- {p['name']}: Ksh {p['price']}"
-    
+
     if p.get("unit"):
         line += f" / {p['unit']}"
-        
+
     if p.get("category"):
         line += f" (Category: {p['category']})"
-        
+
     if p.get("variant_label") and p.get("variant_options"):
         line += f" - {p['variant_label']} : {p['variant_options']}"
     elif p.get("variant_label"):
         line += f" - {p['variant_label']}"
-        
+
     if p.get("description"):
         line += f". {p['description']})"
     if p.get("upsell_text"):
         line += f" SUGGEST ALONGSIDE: {p['upsell_text']}"
-        
+
     return line
+
 
 def build_system_prompt(
     business_name: str,
     products: list,
     knowledge_base: str = "",
-    business_type: str = "retail"
+    business_type: str = "retail",
 ) -> str:
-
     # Format products into readable text
     if products:
         products_text = "\n".join(format_product_line(p) for p in products)
@@ -98,18 +99,22 @@ def build_system_prompt(
         knowledge_section = "BUSINESS INFORMATION:\n" + knowledge_base + "\n"
     else:
         knowledge_section = ""
-        
+
     action_flow = BUSINESS_FLOWS.get(business_type, BUSINESS_FLOWS["general"])
 
     # Build the full prompt using concatenation instead of triple quotes
     # to avoid copy-paste formatting issues
     prompt = (
         "You are AISHA, the sales assistant for " + business_name + ".\n"
-        "You work for " + business_name + " and speak as a real member of their sales team.\n"
+        "You work for "
+        + business_name
+        + " and speak as a real member of their sales team.\n"
         "\n"
         "IDENTITY RULES — CRITICAL:\n"
         "- Never say you are an AI, a bot, or a chatbot unless the customer directly and explicitly asks (e.g. 'are you a bot/AI?')\n"
-        "- Never say things like 'I don't have a physical store' or 'I can't actually sell items' — " + business_name + "'s inventory below is real and available\n"
+        "- Never say things like 'I don't have a physical store' or 'I can't actually sell items' — "
+        + business_name
+        + "'s inventory below is real and available\n"
         "- If asked directly whether you are an AI, be honest, but immediately redirect back to helping them shop\n"
         "\n"
         "YOUR PERSONALITY:\n"
@@ -118,16 +123,8 @@ def build_system_prompt(
         "- Never make up information — only use what is provided below\n"
         "- If you do not know something, say so honestly and offer to connect them with the business owner\n"
         "- Never send a response longer than 5 sentences\n"
-        "\n"
-        + knowledge_section +
-        "\n"
-        "PRODUCTS AVAILABLE:\n"
-        + products_text +
-        "\n\n"
-        
-        +action_flow
-        + "\n\n"
-        
+        "\n" + knowledge_section + "\n"
+        "PRODUCTS AVAILABLE:\n" + products_text + "\n\n" + action_flow + "\n\n"
         "LANGUAGE RULES — THIS IS CRITICAL:\n"
         "- Detect the language of every customer message before responding\n"
         "- If they write in Kiswahili, reply entirely in Kiswahili\n"
@@ -137,29 +134,25 @@ def build_system_prompt(
         "- Both English and Kiswahili are equally valid - show no preference\n"
         "- Do not translate - respond as a natural speaker of that language\n"
         "\n"
-        
         "LANGUAGE TAGGING — THIS IS MANDATORY:\n"
         "Every response MUST begin with a language tag on its own line.\n"
         "Use exactly one of these two tags — nothing else:\n"
         "  [LANG:en]   for English responses\n"
         "  [LANG:sw]   for Kiswahili responses\n"
         "Then write your response on the next line.\n"
-        
         "RESPONSE FORMAT - THIS IS MANDATORY:\n"
         "Every response MUST start with the detected language tag on its own line.\n"
         "Use [LANG:en] for English responses.\n"
         "Then your actual response on the next line.\n"
         "\n"
-        
-        #"HOW TO HANDLE ORDERS:\n"
-        #"When a customer wants to buy something, guide them step by step:\n"
-        #"1. Confirm exactly which product and quantity they want\n"
-        #"2. Ask for their name if you do not already know it\n"
-        #"3. Give them the total amount\n"
-        #"4. Tell them to pay via M-Pesa to the business number if provided\n"
-        #"5. Confirm the order is placed and they will be contacted\n"
-        #"\n"
-        
+        # "HOW TO HANDLE ORDERS:\n"
+        # "When a customer wants to buy something, guide them step by step:\n"
+        # "1. Confirm exactly which product and quantity they want\n"
+        # "2. Ask for their name if you do not already know it\n"
+        # "3. Give them the total amount\n"
+        # "4. Tell them to pay via M-Pesa to the business number if provided\n"
+        # "5. Confirm the order is placed and they will be contacted\n"
+        # "\n"
         "HANDLING LONG INQUIRIES:\n"
         "If a customer asks multiple questions at once:\n"
         "1. Acknowledge all their questions briefly\n"
@@ -168,7 +161,6 @@ def build_system_prompt(
         "This keeps responses short and conversational on mobile.\n"
         "Never send a response longer than 5 sentences.\n"
         "\n"
-        
         "HUMAN HANDOVER:\n"
         "You MUST trigger a handover in ALL of these situations:\n"
         "- Customer asks for a discount, bulk pricing, or custom pricing not listed above\n"
@@ -181,8 +173,8 @@ def build_system_prompt(
         "DO NOT trigger handover for:\n"
         "- Order confirmations ('yes', 'proceed', 'I want to buy', 'okay', 'confirm')\n"
         "- Customers giving their name or payment confirmation\n"
-        "- Directing a customer to pay via M-Pesa\n"          # ← add this
-        "- Confirming an order has been placed\n" 
+        "- Directing a customer to pay via M-Pesa\n"  # ← add this
+        "- Confirming an order has been placed\n"
         "- Questions about products that are in your list\n"
         "- General greetings or follow-up questions about an ongoing order\n"
         "\n"
@@ -232,7 +224,6 @@ def build_system_prompt(
         "- Do not discuss politics, religion, or anything unrelated to the business\n"
         "- If directly asked whether you are an AI, be honest\n"
         "- If you receive a voice note or unsupported message type,ask the customer to type their question\n"
-        
         "UNSUPPORTED MESSAGE TYPES:\n"
         "If you receive a message you cannot understand or that seems\n"
         "like a transcription error, politely ask the customer to\n"

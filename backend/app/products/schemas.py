@@ -3,7 +3,8 @@ Pydantic schemas for the Products API
 
 The Db model defines storage. These schemas define the API contract-what a client is allowed to send,and what we choose to send back.
 Keeping them separate means we can change the Db without breaking the API, and vice versa.
-""" 
+"""
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -44,6 +45,7 @@ class ProductResponse(BaseModel):
     What we send back to the client. Includes DB-generated fields
     (id, timestamps) that the client never sends us.
     """
+
     id: uuid.UUID
     business_id: uuid.UUID
     name: str
@@ -59,4 +61,6 @@ class ProductResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
 
-    model_config = ConfigDict(from_attributes=True)  # allows .model_validate() / direct model -> schema conversion
+    model_config = ConfigDict(
+        from_attributes=True
+    )  # allows .model_validate() / direct model -> schema conversion

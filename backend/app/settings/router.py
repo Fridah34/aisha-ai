@@ -9,6 +9,7 @@ These two fields directly control how AISHA behaves:
 AUTH NOTE: business_id passed explicitly for now.
 Replace with Depends(get_current_user) when Eve's JWT auth is ready.
 """
+
 import uuid
 from typing import Optional
 
@@ -48,9 +49,7 @@ def get_settings(business_id: uuid.UUID, db: Session = Depends(get_db)):
 
 @router.patch("", response_model=SettingsResponse)
 def update_settings(
-    business_id: uuid.UUID,
-    updates: SettingsUpdate,
-    db: Session = Depends(get_db)
+    business_id: uuid.UUID, updates: SettingsUpdate, db: Session = Depends(get_db)
 ):
     """
     Updates knowledge base and/or business type.
@@ -71,8 +70,7 @@ def update_settings(
         valid_types = {"retail", "services", "general"}
         if updates.business_type not in valid_types:
             raise HTTPException(
-                status_code=400,
-                detail=f"business_type must be one of: {valid_types}"
+                status_code=400, detail=f"business_type must be one of: {valid_types}"
             )
         user.business_type = updates.business_type
 

@@ -22,7 +22,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="AISHA AI",
     description="AI-powered Whatsapp sales assistant for African SMBs",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.add_middleware(
@@ -53,6 +53,7 @@ app.include_router(knowledge_base_router)
 def root():
     return {"message": "AISHA AI backend is running"}
 
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
@@ -60,6 +61,7 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

@@ -4,45 +4,47 @@ from typing import Optional
 from app.models import User
 from sqlalchemy.orm import Session
 
-#==================================================================================
+# ==================================================================================
 #                       USER & AUTHENTICATION OPERATIONS
-#==================================================================================
+# ==================================================================================
 
-#=========CREATE OPERATIONS==========
+# =========CREATE OPERATIONS==========
+
 
 def create_user(
-        db: Session,
-        email: str,
-        name: str,
-        business_name: str,
-        hashed_password: str,
+    db: Session,
+    email: str,
+    name: str,
+    business_name: str,
+    hashed_password: str,
 ) -> User:
     new_user = User(
         email=email,
         name=name,
         business_name=business_name,
-        hashed_password=hashed_password
+        hashed_password=hashed_password,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     return new_user
 
-#========== READ OPERATIONS==========
+
+# ========== READ OPERATIONS==========
+
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
     return db.query(User).filter(User.email == email).first()
 
-def get_all_users(db:Session,skip: int = 0, limit: int = 100) -> list[User]:
+
+def get_all_users(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
     return db.query(User).offset(skip).limit(limit).all()
 
-#========== UPDATE OPERATIONS==========
 
-def update_user(
-        db: Session,
-        user_id: uuid.UUID,
-        **kwargs
-)-> Optional[User]:
+# ========== UPDATE OPERATIONS==========
+
+
+def update_user(db: Session, user_id: uuid.UUID, **kwargs) -> Optional[User]:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return None
@@ -51,9 +53,11 @@ def update_user(
             setattr(user, key, value)
     db.commit()
     db.refresh(user)
-    return user     
+    return user
 
-#========== DELETE OPERATIONS==========
+
+# ========== DELETE OPERATIONS==========
+
 
 def delete_user(db: Session, user_id: uuid.UUID) -> Optional[User]:
     user = db.query(User).filter(User.id == user_id).first()
@@ -63,8 +67,9 @@ def delete_user(db: Session, user_id: uuid.UUID) -> Optional[User]:
     db.commit()
     return user
 
-#=========HELPER OPERATIONS==========
 
-def user_exists(db:Session,email:str) -> bool:
+# =========HELPER OPERATIONS==========
+
+
+def user_exists(db: Session, email: str) -> bool:
     return db.query(User).filter(User.email == email).first() is not None
-

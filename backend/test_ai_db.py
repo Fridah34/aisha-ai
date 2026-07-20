@@ -10,16 +10,16 @@ db = SessionLocal()
 try:
     # First create a test business owner in the database
     # Check if test user already exists
-    test_user = db.query(models.User).filter(
-        models.User.email == "test@zawadi.com"
-    ).first()
+    test_user = (
+        db.query(models.User).filter(models.User.email == "test@zawadi.com").first()
+    )
 
     if not test_user:
         test_user = models.User(
             name="Test Owner",
             email="test@zawadi.com",
             business_name="Zawadi Boutique",
-            hashed_password="hashed_placeholder"
+            hashed_password="hashed_placeholder",
         )
         db.add(test_user)
         db.commit()
@@ -27,9 +27,11 @@ try:
         print(f"Created test business: {test_user.business_name}")
 
     # Add test products if none exist
-    existing_products = db.query(models.Product).filter(
-        models.Product.business_id == test_user.id
-    ).count()
+    existing_products = (
+        db.query(models.Product)
+        .filter(models.Product.business_id == test_user.id)
+        .count()
+    )
 
     if existing_products == 0:
         products = [
@@ -38,22 +40,22 @@ try:
                 name="Nike Air Force 1",
                 description="Available in red and white, sizes 6-11",
                 price=4500,
-                is_available=True
+                is_available=True,
             ),
             models.Product(
                 business_id=test_user.id,
                 name="Adidas Samba",
                 description="Classic white, sizes 6-11",
                 price=5200,
-                is_available=True
+                is_available=True,
             ),
             models.Product(
                 business_id=test_user.id,
                 name="Puma Suede Classic",
                 description="Black, sizes 6-11",
                 price=3800,
-                is_available=True
-            )
+                is_available=True,
+            ),
         ]
         db.add_all(products)
         db.commit()
@@ -68,9 +70,11 @@ try:
         phone_number="+254712345678",
         message_text="Good morning. I am looking for Nike sneakers. What sizes and colors do you have available?",
         business_id=test_user.id,
-        db=db
+        db=db,
     )
-    print("Customer: Good morning. I am looking for Nike sneakers. What sizes and colors do you have available?")
+    print(
+        "Customer: Good morning. I am looking for Nike sneakers. What sizes and colors do you have available?"
+    )
     print("AISHA:", result1["response"])
     print("Response language:", result1["response_language"])
 
@@ -80,7 +84,7 @@ try:
         phone_number="+254722222222",
         message_text="Habari, ninataka kujua bei za sneakers zenu zote",
         business_id=test_user.id,
-        db=db
+        db=db,
     )
     print("Customer: Habari, ninataka kujua bei za sneakers zenu zote")
     print("AISHA:", result2["response"])
@@ -92,7 +96,7 @@ try:
         phone_number="+254733333333",
         message_text="Ninataka red Nike size 8, bei yake ni how much?",
         business_id=test_user.id,
-        db=db
+        db=db,
     )
     print("Customer: Ninataka red Nike size 8, bei yake ni how much?")
     print("AISHA:", result3["response"])
@@ -104,8 +108,8 @@ try:
         phone_number="+254712345678",
         message_text="I would like to order the Nike Air Force 1 in size 9 please",
         business_id=test_user.id,
-        db=db
-)
+        db=db,
+    )
     print("Customer: I would like to order the Nike Air Force 1 in size 9 please")
     print("AISHA:", result4["response"])
     print("Response language:", result4["response_language"])
@@ -116,8 +120,8 @@ try:
         phone_number="+254744444444",
         message_text="Do you offer corporate bulk purchasing agreements?",
         business_id=test_user.id,
-        db=db
-)
+        db=db,
+    )
     print("Customer: Do you offer corporate bulk purchasing agreements?")
     print("AISHA:", result5["response"])
     print("Needs handover:", result5["needs_handover"])
@@ -127,9 +131,11 @@ try:
     print("All tests complete")
 
     # Show what got saved
-    total_messages = db.query(models.Conversation).filter(
-        models.Conversation.business_id == test_user.id
-    ).count()
+    total_messages = (
+        db.query(models.Conversation)
+        .filter(models.Conversation.business_id == test_user.id)
+        .count()
+    )
     total_customers = db.query(models.Customer).count()
     print(f"Messages saved to database: {total_messages}")
     print(f"Customers in database: {total_customers}")

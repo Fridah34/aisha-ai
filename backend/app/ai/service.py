@@ -21,34 +21,99 @@ from sqlalchemy.orm import Session
 SWITCH_HINT = "\n\n_Reply 'menu' to browse other stores anytime._"
 
 SWAHILI_INDICATORS = {
-        # greetings
-        "habari", "mambo", "salama", "hujambo", "hamjambo",
-        # commerce
-        "ninataka", "nataka", "nunua", "kununua", "bei", "gharama",
-        "lipa", "malipo", "mpesa", "order", "niorder", "bidhaa",
-        "inapatikana", "stock", "tuma", "delivery", "ongea",
-        # confirmations
-        "ndiyo", "ndio", "hapana", "sawa", "sawa sawa", "asante",
-        "karibu", "tafadhali", "samahani", "pole", "ngoja",
-        # questions
-        "nini", "wapi", "lini", "vipi", "kwa nini", "ngapi",
-        # products / sizes
-        "saizi", "rangi", "nyekundu", "nyeupe", "nyeusi", "kubwa", "ndogo",
-        # pronouns / common words
-        "mimi", "wewe", "yeye", "sisi", "wao", "tuna", "nina",
-        "yake", "yangu", "yenu", "hii", "hiyo", "hizo",
-    }
+    # greetings
+    "habari",
+    "mambo",
+    "salama",
+    "hujambo",
+    "hamjambo",
+    # commerce
+    "ninataka",
+    "nataka",
+    "nunua",
+    "kununua",
+    "bei",
+    "gharama",
+    "lipa",
+    "malipo",
+    "mpesa",
+    "order",
+    "niorder",
+    "bidhaa",
+    "inapatikana",
+    "stock",
+    "tuma",
+    "delivery",
+    "ongea",
+    # confirmations
+    "ndiyo",
+    "ndio",
+    "hapana",
+    "sawa",
+    "sawa sawa",
+    "asante",
+    "karibu",
+    "tafadhali",
+    "samahani",
+    "pole",
+    "ngoja",
+    # questions
+    "nini",
+    "wapi",
+    "lini",
+    "vipi",
+    "kwa nini",
+    "ngapi",
+    # products / sizes
+    "saizi",
+    "rangi",
+    "nyekundu",
+    "nyeupe",
+    "nyeusi",
+    "kubwa",
+    "ndogo",
+    # pronouns / common words
+    "mimi",
+    "wewe",
+    "yeye",
+    "sisi",
+    "wao",
+    "tuna",
+    "nina",
+    "yake",
+    "yangu",
+    "yenu",
+    "hii",
+    "hiyo",
+    "hizo",
+}
 
-NUMBERS = ["1","2","3","4","5","6","7","8","9","10"]
+NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
 # Handover urgency keywords
 URGENT_KEYWORDS = {
-    #English
-    "complaint", "refund", "scam", "fraud", "angry", "terrible",
-    "wrong","broken", "missing" , "stolen" , "cheat" , "lied",
-    #Kiswahili
-    "malalamiko", "rudisha pesa", "uongo", "hasira", "mbaya sana",
-    "ilinibidi", "nilidanganywa", "tatizo kubwa",
+    # English
+    "complaint",
+    "refund",
+    "scam",
+    "fraud",
+    "angry",
+    "terrible",
+    "wrong",
+    "broken",
+    "missing",
+    "stolen",
+    "cheat",
+    "lied",
+    # Kiswahili
+    "malalamiko",
+    "rudisha pesa",
+    "uongo",
+    "hasira",
+    "mbaya sana",
+    "ilinibidi",
+    "nilidanganywa",
+    "tatizo kubwa",
 }
 
 
@@ -59,10 +124,10 @@ def get_business_prompt(business_id: uuid.UUID, db: Session) -> str:
     if cached:
         print(f"[Cache HIT] Business {business_id} prompt from redis")
         return cached
-    
+
     # Step 2 - cache miss, fetch from PostgreSQL
     print(f"[Cache MISS] Fetching business {business_id} from PostgreSQL")
-    
+
     user = db.query(User).filter(User.id == business_id).first()
     if not user:
         raise ValueError(f"Business owner with id {business_id} not found")
@@ -85,7 +150,7 @@ def get_business_prompt(business_id: uuid.UUID, db: Session) -> str:
             "variant_options": p.variant_options,
             "unit": p.unit,
             "upsell_text": p.upsell_text,
-            "image_url": p.image_url,  
+            "image_url": p.image_url,
         }
         for p in products
     ]
@@ -100,20 +165,17 @@ def get_business_prompt(business_id: uuid.UUID, db: Session) -> str:
         knowledge_base=knowledge_base,
         business_type=business_type,
     )
-    
+
     cache.cache_business_prompt(business_id, prompt)
-    
+
     return prompt
 
 
 def get_conversation_history(
-    customer_id: uuid.UUID,
-    business_id: uuid.UUID,
-    db: Session,
-    limit: int = 10
+    customer_id: uuid.UUID, business_id: uuid.UUID, db: Session, limit: int = 10
 ) -> list:
     """Fetch conversation history from Redis cache or PostgreSQL."""
-    
+
     # Step 1 — check Redis first
     cached = cache.get_cached_conversation(customer_id, business_id)
     if cached is not None:
@@ -122,12 +184,12 @@ def get_conversation_history(
 
     # Step 2 — cache miss, fetch from PostgreSQL
     print("[Cache MISS] Fetching conversation from PostgreSQL")
-    
+
     messages = (
         db.query(Conversation)
         .filter(
             Conversation.customer_id == customer_id,
-            Conversation.business_id == business_id
+            Conversation.business_id == business_id,
         )
         .order_by(Conversation.created_at.desc())
         .limit(limit)
@@ -139,15 +201,12 @@ def get_conversation_history(
     history = []
     for msg in messages:
         role = "user" if msg.role == MessageRole.USER else "assistant"
-        history.append({
-            "role": role,
-            "content": msg.content
-        })
-    
+        history.append({"role": role, "content": msg.content})
+
     # Remove any leading assistant messages (conversations should start with user)
     while history and history[0]["role"] != "user":
         history.pop(0)
-    
+
     # Step 3 - store in Redis for next time
     cache.cache_conversation(customer_id, business_id, history)
 
@@ -161,10 +220,10 @@ def save_message(
     content: str,
     language: str,
     db: Session,
-    delivery_status: str | None = None 
+    delivery_status: str | None = None,
 ) -> None:
     """Save a message to PostgreSQL and update Redis cache."""
-     
+
     # saves to PostgreSQL permanently and updates Redis simultaneously
     new_message = Conversation(
         customer_id=customer_id,
@@ -176,21 +235,21 @@ def save_message(
     )
     db.add(new_message)
     db.commit()
-    
+
     # Update Redis cache immediately
     history_role = "user" if role.upper() == MessageRole.USER.value else "assistant"
     cache.append_to_conversation_cache(
         customer_id=customer_id,
         business_id=business_id,
-        message={"role": history_role, "content": content}
+        message={"role": history_role, "content": content},
     )
 
-    
+
 def normalize_phone(phone_number: str) -> str:
     """Normalize WhatsApp phone numbers to consistent format."""
     phone = phone_number.strip()
     if phone.startswith("whatsapp:"):
-        phone = phone[len("whatsapp:"):]
+        phone = phone[len("whatsapp:") :]
     phone = phone.strip()
     if not phone.startswith("+"):
         phone = "+" + phone
@@ -198,21 +257,15 @@ def normalize_phone(phone_number: str) -> str:
 
 
 def get_or_create_customer(
-    phone_number: str,
-    db: Session,
-    profile_name: str | None = None
+    phone_number: str, db: Session, profile_name: str | None = None
 ) -> Customer:
     """Find a customer by phone number or create them if first message."""
     # Phone number is the customer's only identity — no accounts needed.
     # Normalizes the number before lookup to prevent duplicate records.
-    
+
     phone = normalize_phone(phone_number)
-    
-    customer = (
-        db.query(Customer)
-        .filter(Customer.phone_number == phone)
-        .first()
-    )
+
+    customer = db.query(Customer).filter(Customer.phone_number == phone).first()
 
     if not customer:
         customer = Customer(phone_number=phone, name=profile_name)
@@ -265,7 +318,7 @@ def detect_language(text: str) -> str:
     """Detect whether text is English or Swahili."""
     text_lower = text.lower().strip()
     words = set(text_lower.split())
-    
+
     if words.intersection(SWAHILI_INDICATORS):
         return "SW"
     if any(indicator in text_lower for indicator in SWAHILI_INDICATORS):
@@ -305,20 +358,20 @@ def match_category_selection(message_text: str, categories: list) -> Category | 
     and can't hallucinate a category that doesn't exist.
     """
     text = message_text.strip().lower()
- 
+
     # Numeric match: "2", "2.", "option 2", emoji digit copy-pasted back, etc.
     digits = re.sub(r"[^\d]", "", text)
     if digits.isdigit():
         index = int(digits) - 1
         if 0 <= index < len(categories):
             return categories[index]
- 
+
     # Name match: exact or the category name appears in what they typed
     for cat in categories:
         name_lower = cat.name.strip().lower()
         if name_lower == text or name_lower in text:
             return cat
- 
+
     return None
 
 
@@ -329,7 +382,7 @@ def format_products_in_category(products: list) -> str:
             "We don't have items in that category right now — "
             "want to see something else?"
         )
- 
+
     lines = ["Here's what we have:", ""]
     for p in products:
         line = f"• *{p.name}* — Ksh {p.price}"
@@ -346,7 +399,7 @@ def process_customer_message(
     message_text: str,
     business_id: uuid.UUID,
     db: Session,
-    profile_name=None
+    profile_name=None,
 ) -> dict:
     """Main orchestrator — called by the WhatsApp webhook on every incoming customer message."""
     # 1. Find or create customer
@@ -362,11 +415,11 @@ def process_customer_message(
         role="user",
         content=message_text,
         language=language,
-        db=db
+        db=db,
     )
-    
+
     state = get_or_create_conversation_state(customer.id, business_id, db)
-    
+
     if state.status in (HandoverStatus.HUMAN_ACTIVE, HandoverStatus.NEEDS_HUMAN):
         # Customer is already with a human; send acknowledgment instead of silence
         waiting_msg = "You're connected with our team — they'll be with you shortly!"
@@ -379,28 +432,31 @@ def process_customer_message(
             db=db,
         )
         return {
-            "response": waiting_msg, 
-            "needs_handover": True, 
+            "response": waiting_msg,
+            "needs_handover": True,
             "ai_responded": False,
-            "customer_id": customer.id, 
-            "language": language
+            "customer_id": customer.id,
+            "language": language,
         }
-        
+
     # A new message after the owner closed it out — AI resumes.
     if state.status == HandoverStatus.RESOLVED:
         state.status = HandoverStatus.AI_ACTIVE
         db.commit()
-    
+
     # 3.5 If we're waiting on a category selection, try to resolve it
     #     deterministically before spending an LLM call on it.
-    if hasattr(state, 'pending_action') and state.pending_action == "category_selection":
+    if (
+        hasattr(state, "pending_action")
+        and state.pending_action == "category_selection"
+    ):
         categories = get_categories_for_business(business_id, db)
         matched = match_category_selection(message_text, categories)
- 
+
         if matched:
             state.pending_action = None
             db.commit()
- 
+
             products_in_category = (
                 db.query(Product)
                 .filter(
@@ -411,7 +467,7 @@ def process_customer_message(
                 .all()
             )
             reply = format_products_in_category(products_in_category)
- 
+
             save_message(
                 customer_id=customer.id,
                 business_id=business_id,
@@ -420,7 +476,7 @@ def process_customer_message(
                 language=language,
                 db=db,
             )
- 
+
             return {
                 "response": reply,
                 "needs_handover": False,
@@ -440,7 +496,7 @@ def process_customer_message(
 
     # 5. Fetch conversation history from database
     history = get_conversation_history(customer.id, business_id, db)
-    
+
     history = truncate_history_to_token_limit(history, system_prompt)
 
     # 6. Ensure current message is at the end of history
@@ -449,19 +505,19 @@ def process_customer_message(
 
     # 7. Get AI response
     raw_response = get_ai_response(system_prompt, history)
-    
+
     # 8. Parse language tag and clean response in one step
     detected_language, clean = parse_ai_response(raw_response)
 
     # 9. Check for handover trigger
     needs_handover = detect_handover(clean)
-    
+
     # 9b. Check whether AISHA wants to show the category picker
     show_categories = detect_category_browse_request(clean)
 
     # 10. Clean internal tags from response
     clean = clean_response(clean)
-    
+
     # 10b. If AISHA asked to show categories (and isn't simultaneously handing over),
     #      append the category list and mark the state for next reply.
     if show_categories and not needs_handover:
@@ -471,7 +527,7 @@ def process_customer_message(
             clean = f"{clean}\n\n{category_text}" if clean else category_text
             state.pending_action = "category_selection"
             db.commit()
-    
+
     # 11. Classify handover urgency (used by dashboard prioritization)
     urgency = classify_handover_urgency(message_text) if needs_handover else None
 
@@ -482,9 +538,9 @@ def process_customer_message(
         role="assistant",
         content=clean,
         language=detected_language,
-        db=db
+        db=db,
     )
-    
+
     if needs_handover:
         state.status = HandoverStatus.NEEDS_HUMAN
         db.commit()
@@ -497,7 +553,7 @@ def process_customer_message(
         "customer_id": customer.id,
         "language": language,
         "response_language": detected_language,
-        "ai_responded": True
+        "ai_responded": True,
     }
 
 
@@ -506,7 +562,7 @@ def notify_handover(
     business_id: uuid.UUID,
     customer_message: str,
     urgency: str,
-    db: Session
+    db: Session,
 ) -> None:
     """
     Alerts when AISHA triggers a handover.
@@ -527,16 +583,14 @@ def notify_handover(
 
 
 def get_or_create_conversation_state(
-    customer_id: uuid.UUID,
-    business_id: uuid.UUID,
-    db: Session
+    customer_id: uuid.UUID, business_id: uuid.UUID, db: Session
 ) -> ConversationState:
     """Get or create conversation state for a customer."""
     state = (
         db.query(ConversationState)
         .filter(
             ConversationState.customer_id == customer_id,
-            ConversationState.business_id == business_id
+            ConversationState.business_id == business_id,
         )
         .first()
     )
@@ -556,19 +610,19 @@ def parse_ai_response(raw_response: str) -> tuple:
     """
     if not raw_response:
         return "EN", ""
-    
+
     lines = raw_response.strip().split("\n", 1)
     first_line = lines[0].strip()
-    
+
     # Happy path - AI included the language tag correctly
     if first_line == "[LANG:en]":
         clean = lines[1].strip() if len(lines) > 1 else ""
         return "EN", clean
-    
+
     if first_line == "[LANG:sw]":
         clean = lines[1].strip() if len(lines) > 1 else ""
         return "SW", clean
-    
+
     # Fallback — AI forgot the tag (happens occasionally)
     # Use simple word check rather than a library
     print("[AISHA WARNING] AI response missing language tag — using word fallback")

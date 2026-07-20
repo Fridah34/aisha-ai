@@ -43,6 +43,7 @@ DEFAULT_CONVERSATION_LIMIT: int = 10
 
 class IngestionRejectedError(ValueError):
     """Triggered when an uploaded corporate asset fails raw regex safety checks."""
+
     pass
 
 
@@ -57,7 +58,11 @@ def _read_system_prompt(path: Path) -> str:
 class KnowledgeBaseManager:
     """Manages secure, multi-tenant document ingestion, indexing, and prompt generation."""
 
-    def __init__(self, session: AsyncSession, clean_wiki_dir: Path | str = "knowledge_base/clean_wiki") -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        clean_wiki_dir: Path | str = "knowledge_base/clean_wiki",
+    ) -> None:
         self.session: AsyncSession = session
         # Lock down our directory traversal sandbox safety resolver
         self.resolver: TenantFileResolver = TenantFileResolver(base_dir=clean_wiki_dir)
@@ -69,7 +74,7 @@ class KnowledgeBaseManager:
             parsed = uuid.UUID(str(business_id))
         except (ValueError, AttributeError, TypeError):
             raise ValueError(f"Invalid tenant id for RLS context: {business_id!r}")
-        
+
         await session.execute(
             text("SELECT set_config('app.current_tenant_id', :business_id, true)"),
             {"business_id": str(parsed)},
@@ -88,7 +93,9 @@ class KnowledgeBaseManager:
         # Step 1: Secure and resolve path boundaries entirely in RAM memory first
         file_path = self.resolver.resolve_within_tenant(business_id, source_file)
         if not file_path.is_file():
-            raise FileNotFoundError(f"No such document for tenant {business_id}: {source_file}")
+            raise FileNotFoundError(
+                f"No such document for tenant {business_id}: {source_file}"
+            )
 
         raw_text = file_path.read_text(encoding="utf-8")
 
@@ -111,11 +118,12 @@ class KnowledgeBaseManager:
             )
         )
         existing_rows: Sequence[WikiChunk] = existing_rows_seq.scalars().all()
-        
+
         # Map existing rows via section_path instead of db-generated auto-incrementing ID
         existing_by_section: dict[str, WikiChunk] = {
-            f"{row.source_file}#{row.section_path}": row 
-            for row in existing_rows if hasattr(row, "section_path")
+            f"{row.source_file}#{row.section_path}": row
+            for row in existing_rows
+            if hasattr(row, "section_path")
         }
 
         # Fallback dictionary mapping: If schema does not use section_path columns, fallback to text content hashing
@@ -132,15 +140,18 @@ class KnowledgeBaseManager:
         for chunk in chunks:
             # REPLACED: md5 hash changed to secure sha256 content hashing
             content_hash = hashlib.sha256(chunk.content.encode("utf-8")).hexdigest()
-            
+
             # Form consistent compound key checking strings
             chunk_key = f"{source_file}#{chunk.section_path}"
             seen_chunks.add(chunk_key)
-            
+
             existing = existing_by_section.get(chunk_key)
 
             # If the exact text paragraph and path match signature exactly, skip database writes
-            if existing is not None and getattr(existing, "content_hash", None) == content_hash:
+            if (
+                existing is not None
+                and getattr(existing, "content_hash", None) == content_hash
+            ):
                 result_rows.append(existing)
                 continue
 
@@ -149,8 +160,12 @@ class KnowledgeBaseManager:
                 await self.session.delete(existing)
 
             # Format parent breadcrumb context directly inside body text for LLM visibility
-            final_body = f"Context: {chunk.section_path}\n\nData: {chunk.content}" if chunk.section_path else chunk.content
-            
+            final_body = (
+                f"Context: {chunk.section_path}\n\nData: {chunk.content}"
+                if chunk.section_path
+                else chunk.content
+            )
+
             # Instantiate clean updated text snippet row representation
             new_row = WikiChunk(
                 business_id=business_id,
@@ -159,7 +174,7 @@ class KnowledgeBaseManager:
                 section_path=chunk.section_path,
                 content_hash=content_hash,
             )
-            
+
             self.session.add(new_row)
             result_rows.append(new_row)
 
@@ -189,15 +204,15 @@ class KnowledgeBaseManager:
 
         # 2. Compile foundational system rules files data (Loaded via Cached method)
         system_block = self._load_system_block()
-        
+
         # 3. Pull matching facts via fast GIN Inverted Text Index scans
         retrieved_context = await self._load_retrieved_context_block(
             business_id, sanitized_message, limit=retrieval_limit
         )
-        
+
         # 4. Pull live transactional inventory status strings from Postgres database rows
         live_catalog = await self._load_live_catalog_block(business_id)
-        
+
         # 5. Extract conversation log histories, sorted beautifully from oldest to newest
         recent_conversation = await self._load_conversation_block(
             business_id, limit=conversation_limit
@@ -229,7 +244,7 @@ class KnowledgeBaseManager:
         self, business_id: uuid.UUID, query: str, limit: int
     ) -> list[RetrievedChunk]:
         """Queries database wiki chunks returning actual section path fields."""
-        # RESOLVED: Retrieving original section_path from database rows 
+        # RESOLVED: Retrieving original section_path from database rows
         sql = text(
             """
             SELECT source_file, chunk_text, section_path
@@ -254,7 +269,9 @@ class KnowledgeBaseManager:
             for row in rows
         ]
 
-    async def _load_live_catalog_block(self, business_id: uuid.UUID) -> list[ProductContext]:
+    async def _load_live_catalog_block(
+        self, business_id: uuid.UUID
+    ) -> list[ProductContext]:
         """Fetches all inventory products ensuring consistency with active catalog rendering."""
         # Connects smoothly to your optimized SQLAlchemy 2.0 Product table class schema
         from app.models import Product
@@ -273,7 +290,7 @@ class KnowledgeBaseManager:
         """Resolves database conversation history preserving created_at timestamps."""
         # Connects smoothly to your type-safe ChatMessage model table setup
         from app.models import ChatMessage
-        
+
         result = await self.session.execute(
             select(ChatMessage)
             .where(ChatMessage.business_id == business_id)
@@ -281,7 +298,7 @@ class KnowledgeBaseManager:
             .limit(limit)
         )
         rows = result.scalars().all()
-        
+
         #  PRESERVED: Timestamps mapped explicitly from Database Row created_at fields
         return [
             ConversationTurn(

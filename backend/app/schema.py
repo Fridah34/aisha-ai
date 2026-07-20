@@ -22,32 +22,47 @@ class OrderStatus(str, Enum):
     DELIVERED = "DELIVERED"
     CANCELLED = "CANCELLED"
 
+
 class MessageRole(str, Enum):
     USER = "USER"
     ASSISTANT = "ASSISTANT"
     HUMAN = "HUMAN"
 
+
 class Language(str, Enum):
     EN = "EN"
     SW = "SW"
+
+
 class SupportedLanguages(str, Enum):
     en = "en"
     sw = "sw"
-    
+
+
 class BusinessType(str, Enum):
     retail = "retail"
     fashion = "fashion"
     services = "services"
     food = "food"
 
+
 # ==========USER SCHEMAS==========
+
 
 class UserRegister(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="Full name")
     email: EmailStr = Field(description="Unique email address")
-    password: str = Field(min_length=8, max_length=100, description="Password with a minimum of 8 characters")
-    confirm_password: str = Field(..., min_length=8, max_length=100, description="Password confirmation")
-    business_name: str = Field(min_length=1, max_length=150, description="Business name")
+    password: str = Field(
+        min_length=8,
+        max_length=100,
+        description="Password with a minimum of 8 characters",
+    )
+    confirm_password: str = Field(
+        ..., min_length=8, max_length=100, description="Password confirmation"
+    )
+    business_name: str = Field(
+        min_length=1, max_length=150, description="Business name"
+    )
     business_type: BusinessType = Field(description="Type of business")
 
     #  This checks that both fields match automatically!
@@ -65,17 +80,19 @@ class UserRegister(BaseModel):
 
         bad_domains = ["example.com", "test.com", "invalid.com", "fake.com"]
         if any(domain in lowercase_email for domain in bad_domains):
-            raise ValueError("Please use a real email address, not a placeholder domain.")
-        
+            raise ValueError(
+                "Please use a real email address, not a placeholder domain."
+            )
+
         return value
-    
-    #Automatically  hooks ito your custom ' is _password_strong' utility rule
+
+    # Automatically  hooks ito your custom ' is _password_strong' utility rule
     @field_validator("password")
     @classmethod
     def enforce_strong_passwords(cls, value: str) -> str:
         if not is_password_strong(value):
             raise ValueError("Password is not strong enough.")
-        
+
         return value
 
     model_config = ConfigDict(
@@ -86,10 +103,11 @@ class UserRegister(BaseModel):
                 "password": "securepassword",
                 "confirm_password": "securepassword",
                 "business_name": "Eve's Business",
-                "business_type": "retail"
+                "business_type": "retail",
             }
         }
     )
+
 
 class UserGoogleRegister(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="Full name")
@@ -103,10 +121,11 @@ class UserGoogleRegister(BaseModel):
                 "name": "Eve Mipata",
                 "email": "eve.mipata@example.com",
                 "google_id": "google-oauth2|1234567890",
-                "business_name": "Eve's Business"
+                "business_name": "Eve's Business",
             }
         }
     )
+
 
 class UserLogin(BaseModel):
     email: EmailStr = Field(description="Registered email address")
@@ -114,12 +133,10 @@ class UserLogin(BaseModel):
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {
-                "email": "eve.mipata@example.com",
-                "password": "securepassword"
-            }
+            "example": {"email": "eve.mipata@example.com", "password": "securepassword"}
         }
     )
+
 
 class UserResponse(BaseModel):
     id: uuid.UUID
@@ -139,10 +156,11 @@ class UserResponse(BaseModel):
                 "email": "eve.mipata@example.com",
                 "business_name": "Eve's Business",
                 "is_active": True,
-                "created_at": "2026-06-11T14:00:00"
+                "created_at": "2026-06-11T14:00:00",
             }
-        }
+        },
     )
+
 
 class TokenResponse(BaseModel):
     access_token: str = Field(description="JWT access token")
@@ -161,13 +179,15 @@ class TokenResponse(BaseModel):
                     "email": "eve.mipata@example.com",
                     "business_name": "Eve's Business",
                     "is_active": True,
-                    "created_at": "2026-06-11T14:00:00"
-                }
+                    "created_at": "2026-06-11T14:00:00",
+                },
             }
-        }
+        },
     )
 
+
 # ==========PRODUCT SCHEMAS==========
+
 
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -181,10 +201,11 @@ class ProductCreate(BaseModel):
                 "name": "Product 1",
                 "description": "This is a great product.",
                 "price": 19.99,
-                "is_available": True
+                "is_available": True,
             }
         }
     )
+
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -198,10 +219,11 @@ class ProductUpdate(BaseModel):
                 "name": "Updated Product Name",
                 "description": "Updated description.",
                 "price": 24.99,
-                "is_available": False
+                "is_available": False,
             }
         }
     )
+
 
 class ProductResponse(BaseModel):
     id: uuid.UUID
@@ -224,12 +246,14 @@ class ProductResponse(BaseModel):
                 "price": 19.99,
                 "is_available": True,
                 "created_at": "2026-06-11T14:00:00",
-                "updated_at": "2026-06-11T14:00:00"
+                "updated_at": "2026-06-11T14:00:00",
             }
-        }
+        },
     )
 
-#=========CUSTOMER SCHEMAS==========
+
+# =========CUSTOMER SCHEMAS==========
+
 
 class CustomerResponse(BaseModel):
     id: uuid.UUID
@@ -250,10 +274,11 @@ class CustomerResponse(BaseModel):
                 "is_active": True,
                 "deleted_at": None,
                 "first_seen": "2026-06-11T14:00:00",
-                "last_seen": "2026-06-11T14:00:00"
+                "last_seen": "2026-06-11T14:00:00",
             }
-        }
+        },
     )
+
 
 class ConversationCreate(BaseModel):
     customer_id: uuid.UUID
@@ -269,10 +294,11 @@ class ConversationCreate(BaseModel):
                 "business_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                 "role": "USER",
                 "content": "Hello, I have a question about my order.",
-                "language": "EN"
+                "language": "EN",
             }
         }
     )
+
 
 class ConversationResponse(BaseModel):
     id: uuid.UUID
@@ -293,10 +319,11 @@ class ConversationResponse(BaseModel):
                 "role": "USER",
                 "content": "Hello, I have a question about my order.",
                 "language": "EN",
-                "created_at": "2026-06-11T14:00:00"
+                "created_at": "2026-06-11T14:00:00",
             }
-        }
+        },
     )
+
 
 class ConversationHistoryResponse(BaseModel):
     customer_id: uuid.UUID
@@ -304,7 +331,9 @@ class ConversationHistoryResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-#=========ORDER SCHEMAS==========
+
+# =========ORDER SCHEMAS==========
+
 
 class OrderCreate(BaseModel):
     customer_id: Optional[uuid.UUID] = None
@@ -322,21 +351,17 @@ class OrderCreate(BaseModel):
                 "business_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                 "quantity": 2,
                 "total_amount": 39.98,
-                "status": "PENDING"
+                "status": "PENDING",
             }
         }
     )
 
+
 class OrderUpdate(BaseModel):
     status: OrderStatus
-    
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "status": "SHIPPED"
-            }
-        }
-    )
+
+    model_config = ConfigDict(json_schema_extra={"example": {"status": "SHIPPED"}})
+
 
 class OrderResponse(BaseModel):
     id: uuid.UUID
@@ -349,7 +374,7 @@ class OrderResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    snapshot_customer_name: Optional[str] 
+    snapshot_customer_name: Optional[str]
     snapshot_customer_phone: Optional[str]
     snapshot_product_name: Optional[str]
     snapshot_product_price: Optional[float]
@@ -372,7 +397,7 @@ class OrderResponse(BaseModel):
                 "snapshot_customer_phone": "+1234567890",
                 "snapshot_product_name": "Product 1",
                 "snapshot_product_price": 19.99,
-                "snapshot_business_name": "Eve's Business"
+                "snapshot_business_name": "Eve's Business",
             }
-        }
+        },
     )

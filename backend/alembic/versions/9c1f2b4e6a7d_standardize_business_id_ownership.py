@@ -29,7 +29,9 @@ def _has_constraint(inspector: sa.Inspector, table: str, name: str) -> bool:
     return any(c["name"] == name for c in inspector.get_unique_constraints(table))
 
 
-def _drop_foreign_keys_for_column(inspector: sa.Inspector, table: str, column: str) -> None:
+def _drop_foreign_keys_for_column(
+    inspector: sa.Inspector, table: str, column: str
+) -> None:
     for fk in inspector.get_foreign_keys(table):
         if fk.get("constrained_columns") == [column] and fk.get("name"):
             op.drop_constraint(fk["name"], table, type_="foreignkey")
@@ -37,7 +39,10 @@ def _drop_foreign_keys_for_column(inspector: sa.Inspector, table: str, column: s
 
 def _has_business_fk(inspector: sa.Inspector, table: str) -> bool:
     for fk in inspector.get_foreign_keys(table):
-        if fk.get("constrained_columns") == ["business_id"] and fk.get("referred_table") == "users":
+        if (
+            fk.get("constrained_columns") == ["business_id"]
+            and fk.get("referred_table") == "users"
+        ):
             return True
     return False
 
@@ -52,7 +57,11 @@ def _rename_user_to_business_if_needed(table: str) -> None:
         op.alter_column(table, "user_id", new_column_name="business_id")
     elif has_user and has_business:
         # Defensive backfill path for mixed transitional schemas.
-        op.execute(sa.text(f"UPDATE {table} SET business_id = user_id WHERE business_id IS NULL"))
+        op.execute(
+            sa.text(
+                f"UPDATE {table} SET business_id = user_id WHERE business_id IS NULL"
+            )
+        )
 
 
 def upgrade() -> None:
@@ -73,7 +82,9 @@ def upgrade() -> None:
         "orders": "SET NULL",
     }
     for table, ondelete in fk_specs.items():
-        if table not in inspector.get_table_names() or not _has_column(inspector, table, "business_id"):
+        if table not in inspector.get_table_names() or not _has_column(
+            inspector, table, "business_id"
+        ):
             continue
         if not _has_business_fk(inspector, table):
             op.create_foreign_key(
@@ -86,17 +97,20 @@ def upgrade() -> None:
             )
 
     for table in ("categories", "orders", "products", "customers"):
-        if table not in inspector.get_table_names() or not _has_column(inspector, table, "business_id"):
+        if table not in inspector.get_table_names() or not _has_column(
+            inspector, table, "business_id"
+        ):
             continue
         if _has_index(inspector, table, f"ix_{table}_user_id"):
             op.drop_index(f"ix_{table}_user_id", table_name=table)
         if not _has_index(inspector, table, f"ix_{table}_business_id"):
-            op.create_index(f"ix_{table}_business_id", table, ["business_id"], unique=False)
+            op.create_index(
+                f"ix_{table}_business_id", table, ["business_id"], unique=False
+            )
 
     if "customers" in inspector.get_table_names():
-        if (
-            _has_column(inspector, "customers", "business_id")
-            and not _has_constraint(inspector, "customers", "uq_customer_per_business")
+        if _has_column(inspector, "customers", "business_id") and not _has_constraint(
+            inspector, "customers", "uq_customer_per_business"
         ):
             op.create_unique_constraint(
                 "uq_customer_per_business",
@@ -105,9 +119,8 @@ def upgrade() -> None:
             )
 
     if "categories" in inspector.get_table_names():
-        if (
-            _has_column(inspector, "categories", "business_id")
-            and not _has_constraint(inspector, "categories", "uq_category_per_business")
+        if _has_column(inspector, "categories", "business_id") and not _has_constraint(
+            inspector, "categories", "uq_category_per_business"
         ):
             op.create_unique_constraint(
                 "uq_category_per_business",
@@ -123,6 +136,8 @@ def downgrade() -> None:
     for table in ("categories", "orders", "products", "customers"):
         if table not in inspector.get_table_names():
             continue
-        if _has_column(inspector, table, "business_id") and not _has_column(inspector, table, "user_id"):
+        if _has_column(inspector, table, "business_id") and not _has_column(
+            inspector, table, "user_id"
+        ):
             _drop_foreign_keys_for_column(inspector, table, "business_id")
             op.alter_column(table, "business_id", new_column_name="user_id")

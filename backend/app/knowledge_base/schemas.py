@@ -24,6 +24,7 @@ from pydantic import (
 # ENUMS
 # ==========================================================
 
+
 class Currency(str, Enum):
     KES = "KES"
 
@@ -31,6 +32,7 @@ class Currency(str, Enum):
 # ==========================================================
 # PRODUCT MODEL
 # ==========================================================
+
 
 class ProductContext(BaseModel):
     """Represents a validated product loaded from the live database."""
@@ -56,6 +58,7 @@ class ProductContext(BaseModel):
 # RETRIEVED DOCUMENT CHUNK
 # ==========================================================
 
+
 class RetrievedChunk(BaseModel):
     """A retrieved knowledge chunk from the document index."""
 
@@ -68,6 +71,7 @@ class RetrievedChunk(BaseModel):
 # CHAT HISTORY
 # ==========================================================
 
+
 class ConversationTurn(BaseModel):
     """Represents one validated conversation message."""
 
@@ -79,6 +83,7 @@ class ConversationTurn(BaseModel):
 # ==========================================================
 # MASTER PROMPT PAYLOAD
 # ==========================================================
+
 
 class PromptPayload(BaseModel):
     """
@@ -115,13 +120,16 @@ class PromptPayload(BaseModel):
         # --------------------------------------------
         # Retrieved Context Formatting
         # --------------------------------------------
-        context_text = "\n\n".join(
-            (
-                f"[{chunk.section_path}] ({chunk.source_file})\n"
-                f"{self._escape(chunk.content)}"
+        context_text = (
+            "\n\n".join(
+                (
+                    f"[{chunk.section_path}] ({chunk.source_file})\n"
+                    f"{self._escape(chunk.content)}"
+                )
+                for chunk in self.retrieved_context
             )
-            for chunk in self.retrieved_context
-        ) or "(no matching policy content found)"
+            or "(no matching policy content found)"
+        )
 
         # --------------------------------------------
         # Product Catalog Partitioning
@@ -130,7 +138,11 @@ class PromptPayload(BaseModel):
         unavailable_products = [p for p in self.live_catalog if not p.is_available]
 
         def format_product(product: ProductContext) -> str:
-            stock = product.stock_quantity if product.stock_quantity is not None else "Unknown"
+            stock = (
+                product.stock_quantity
+                if product.stock_quantity is not None
+                else "Unknown"
+            )
             return (
                 f"• {product.name}\n"
                 f"  Price: {product.currency.value} {product.price:,.2f}\n"
@@ -140,26 +152,35 @@ class PromptPayload(BaseModel):
         catalog_sections = []
         if available_products:
             catalog_sections.append(
-                "AVAILABLE PRODUCTS\n" + "\n\n".join(format_product(p) for p in available_products)
+                "AVAILABLE PRODUCTS\n"
+                + "\n\n".join(format_product(p) for p in available_products)
             )
         if unavailable_products:
             catalog_sections.append(
-                "OUT OF STOCK PRODUCTS\n" + "\n\n".join(format_product(p) for p in unavailable_products)
+                "OUT OF STOCK PRODUCTS\n"
+                + "\n\n".join(format_product(p) for p in unavailable_products)
             )
 
-        catalog_text = "\n\n".join(catalog_sections) if catalog_sections else "(no products currently listed)"
+        catalog_text = (
+            "\n\n".join(catalog_sections)
+            if catalog_sections
+            else "(no products currently listed)"
+        )
 
         # --------------------------------------------
         # Conversation History Timeline Formatting
         # --------------------------------------------
-        conversation_text = "\n".join(
-            (
-                f"[{turn.created_at.isoformat()}] "
-                f"{turn.role}: "
-                f"{self._escape(turn.content)}"
+        conversation_text = (
+            "\n".join(
+                (
+                    f"[{turn.created_at.isoformat()}] "
+                    f"{turn.role}: "
+                    f"{self._escape(turn.content)}"
+                )
+                for turn in self.recent_conversation
             )
-            for turn in self.recent_conversation
-        ) or "(no prior conversation)"
+            or "(no prior conversation)"
+        )
 
         # --------------------------------------------
         # Final Secured Prompt Assembly

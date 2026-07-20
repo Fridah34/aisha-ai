@@ -37,7 +37,7 @@ def sample_retrieved_chunks() -> list[RetrievedChunk]:
         RetrievedChunk(
             section_path="Shoes > Running",
             content="Our leather sports sneakers retail for KSh 3,500.",
-            source_file="catalog.md"
+            source_file="catalog.md",
         )
     ]
 
@@ -54,7 +54,7 @@ def sample_products() -> list[ProductContext]:
             is_available=True,
             stock_quantity=12,
             sku="BOOT-001",
-            description="Premium suede hiking boots."
+            description="Premium suede hiking boots.",
         ),
         ProductContext(
             id=uuid.uuid4(),
@@ -64,8 +64,8 @@ def sample_products() -> list[ProductContext]:
             is_available=False,
             stock_quantity=0,
             sku="HEEL-001",
-            description="Elegant red satin evening heels."
-        )
+            description="Elegant red satin evening heels.",
+        ),
     ]
 
 
@@ -76,13 +76,13 @@ def sample_conversation_history() -> list[ConversationTurn]:
         ConversationTurn(
             role="user",
             content="Hello, do you have sneakers?",
-            created_at=datetime(2026, 7, 14, 12, 0, 0, tzinfo=timezone.utc)
+            created_at=datetime(2026, 7, 14, 12, 0, 0, tzinfo=timezone.utc),
         ),
         ConversationTurn(
             role="assistant",
             content="Yes! Let me check our running shoes category.",
-            created_at=datetime(2026, 7, 14, 12, 0, 5, tzinfo=timezone.utc)
-        )
+            created_at=datetime(2026, 7, 14, 12, 0, 5, tzinfo=timezone.utc),
+        ),
     ]
 
 

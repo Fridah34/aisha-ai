@@ -7,6 +7,7 @@ never from the client. Orders themselves are never created here — they
 come exclusively from the WhatsApp checkout flow
 (app.flows.marketplace_flow.create_orders_from_cart).
 """
+
 import uuid
 
 from app.auth.dependencies import get_current_user
@@ -32,7 +33,9 @@ def list_orders(
 
     return [
         OrderGroupResponse(
-            order_ref=str(rows[0].order_group_id)[:8] if rows[0].order_group_id else str(rows[0].id),
+            order_ref=str(rows[0].order_group_id)[:8]
+            if rows[0].order_group_id
+            else str(rows[0].id),
             customer_name=rows[0].snapshot_customer_name,
             customer_phone=rows[0].snapshot_customer_phone,
             created_at=rows[0].created_at,

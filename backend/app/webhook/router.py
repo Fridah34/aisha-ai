@@ -23,17 +23,20 @@ UNSUPPORTED_MESSAGE = (
     "Samahani, ninaweza kusoma maandishi tu kwa sasa. Tafadhali andika swali lako."
 )
 
-def find_product_image(response_text: str, business_id: uuid.UUID, db: Session) -> tuple[str | None, uuid.UUID | None]:
+
+def find_product_image(
+    response_text: str, business_id: uuid.UUID, db: Session
+) -> tuple[str | None, uuid.UUID | None]:
     if not response_text:
         return None, None
-    
+
     base_url = os.getenv("BASE_URL", "").rstrip("/")
     if not base_url:
         print("[Webhook] BASE_URL is missing")
         return None, None
-    
-    #Fetch only products that have an image stored
-    products_with_images= (
+
+    # Fetch only products that have an image stored
+    products_with_images = (
         db.query(Product)
         .filter(
             Product.business_id == business_id,
@@ -42,9 +45,9 @@ def find_product_image(response_text: str, business_id: uuid.UUID, db: Session) 
         )
         .all()
     )
-    
+
     response_lower = response_text.lower()
-    
+
     for product in products_with_images:
         if product.name.lower() in response_lower:
             image_path = product.image_url.strip()
@@ -65,6 +68,7 @@ def find_product_image(response_text: str, business_id: uuid.UUID, db: Session) 
             return public_url, product.id
 
     return None, None
+
 
 @router.post("")
 async def receive_message(
@@ -93,9 +97,9 @@ async def receive_message(
             return Response(status_code=200)
 
         customer_phone = data["phone_number"]
-        message_text   = data["message_text"]
-        message_type   = data["message_type"]
-        profile_name   = data.get("customer_name")
+        message_text = data["message_text"]
+        message_type = data["message_type"]
+        profile_name = data.get("customer_name")
 
         # ── Unsupported type (image, voice note, sticker) ────────────
         if message_type != "text" or not message_text:
@@ -123,25 +127,25 @@ async def receive_message(
             db=db,
             profile_name=profile_name,
         )
-        
+
         if not result.get("response"):
             print("[Webhook] AISHA returned no response")
             print(f"[Webhook] Full result: {result}")
             return Response(status_code=200)
-        
+
         # find product image to attach
         media_url = None
 
         matched_image_url, product_id = find_product_image(
-        response_text=result["response"],
-        business_id=business.id,
-        db=db,
+            response_text=result["response"],
+            business_id=business.id,
+            db=db,
         )
 
         if matched_image_url and product_id:
-        # Use the real Customer UUID (already resolved/created inside
-        # process_customer_message) as the cache key — not the raw phone
-        # string — so image-sent tracking stays consistent with the DB.
+            # Use the real Customer UUID (already resolved/created inside
+            # process_customer_message) as the cache key — not the raw phone
+            # string — so image-sent tracking stays consistent with the DB.
             customer_id = result["customer_id"]
 
             if already_sent_image(
@@ -156,8 +160,8 @@ async def receive_message(
             else:
                 media_url = matched_image_url
 
-            # Mark it BEFORE sending so duplicate webhook requests do not
-            # send the same image again.
+                # Mark it BEFORE sending so duplicate webhook requests do not
+                # send the same image again.
                 mark_image_sent(
                     customer_id=customer_id,
                     business_id=business.id,
@@ -171,8 +175,8 @@ async def receive_message(
 
         # ── Send AISHA's reply to the customer ────────────────────────
         sent = send_text_message(
-            to_phone=customer_phone, 
-            message= result["response"],
+            to_phone=customer_phone,
+            message=result["response"],
             media_url=media_url,
         )
 

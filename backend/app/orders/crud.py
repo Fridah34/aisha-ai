@@ -4,6 +4,7 @@ business_id, matching categories/crud.py. Grouping by order_group_id happens
 here (not in the router) so it's one tested place, same reasoning as
 categories/crud.py owning display_order computation.
 """
+
 import itertools
 from uuid import UUID
 
@@ -31,6 +32,7 @@ def group_orders_by_checkout(orders: list[Order]) -> list[list[Order]]:
     single-item group (via a synthetic per-row UUID) rather than being
     merged together or dropped — those predate the order_group_id
     migration and have no real relationship to each other."""
+
     def group_key(o: Order):
         return o.order_group_id or o.id
 

@@ -23,6 +23,7 @@ class OrderGroupResponse(BaseModel):
     backed by N Order rows sharing one order_group_id. Legacy rows with
     no group id (pre-migration) each render as their own single-item
     group."""
+
     order_ref: str
     customer_name: str | None
     customer_phone: str | None

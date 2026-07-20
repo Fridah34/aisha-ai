@@ -40,7 +40,9 @@ def get_categories_for_business(db: Session, business_id: uuid.UUID) -> list[dic
     ]
 
 
-def get_category_by_id(db: Session, category_id: uuid.UUID, business_id: uuid.UUID) -> Category | None:
+def get_category_by_id(
+    db: Session, category_id: uuid.UUID, business_id: uuid.UUID
+) -> Category | None:
     """
     Fetches a single category, scoped to the owning business — same
     scoping reasoning as products/crud.py's get_product_by_id.
@@ -52,7 +54,9 @@ def get_category_by_id(db: Session, category_id: uuid.UUID, business_id: uuid.UU
     )
 
 
-def create_category(db: Session, category_data: CategoryCreate, business_id: uuid.UUID) -> Category:
+def create_category(
+    db: Session, category_data: CategoryCreate, business_id: uuid.UUID
+) -> Category:
     """
     Inserts a new category row for the authenticated business.
     business_id comes from the caller (the authenticated session), never
@@ -60,7 +64,9 @@ def create_category(db: Session, category_data: CategoryCreate, business_id: uui
     categories always land at the end of the list without the owner
     needing to know the current highest.
     """
-    data = category_data.model_dump(exclude={"display_order", "business_id"}, exclude_unset=True)
+    data = category_data.model_dump(
+        exclude={"display_order", "business_id"}, exclude_unset=True
+    )
     new_category = Category(
         **data,
         business_id=business_id,

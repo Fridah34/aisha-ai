@@ -4,6 +4,7 @@ Conversations API — dashboard endpoints for the business owner.
 AUTH NOTE: business_id is passed explicitly for now.
 Replace with Depends(get_current_user) when Eve's JWT auth is ready.
 """
+
 import uuid
 from datetime import datetime, timezone
 
@@ -25,7 +26,9 @@ def get_inbox(business_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/{customer_id}", response_model=ConversationThread)
-def get_thread(customer_id: uuid.UUID, business_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_thread(
+    customer_id: uuid.UUID, business_id: uuid.UUID, db: Session = Depends(get_db)
+):
     thread = crud.get_thread(db, customer_id, business_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -33,7 +36,9 @@ def get_thread(customer_id: uuid.UUID, business_id: uuid.UUID, db: Session = Dep
 
 
 @router.patch("/{customer_id}/takeover")
-def takeover_conversation(customer_id: uuid.UUID, business_id: uuid.UUID, db: Session = Depends(get_db)):
+def takeover_conversation(
+    customer_id: uuid.UUID, business_id: uuid.UUID, db: Session = Depends(get_db)
+):
     """Owner takes over — AISHA stops auto-replying."""
     state = (
         db.query(ConversationState)
@@ -57,7 +62,9 @@ def takeover_conversation(customer_id: uuid.UUID, business_id: uuid.UUID, db: Se
 
 
 @router.patch("/{customer_id}/resolve")
-def resolve_conversation(customer_id: uuid.UUID, business_id: uuid.UUID, db: Session = Depends(get_db)):
+def resolve_conversation(
+    customer_id: uuid.UUID, business_id: uuid.UUID, db: Session = Depends(get_db)
+):
     """Owner marks done — AISHA resumes on next customer message."""
     state = (
         db.query(ConversationState)
@@ -104,6 +111,5 @@ def send_manual_reply(
         db=db,
         delivery_status="delivered" if twilio_sent else "failed",
     )
-
 
     return {"sent": True, "twilio_delivered": twilio_sent}

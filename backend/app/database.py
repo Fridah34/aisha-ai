@@ -1,4 +1,3 @@
-
 # Enable modern string-based type hinting to prevent version evaluation crashes
 from __future__ import annotations
 
@@ -20,18 +19,21 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
 # ==============================================================================
 # CONNECTION PATH CONFIGURATION
 # ==============================================================================
 if "postgresql+asyncpg://" not in settings.RAW_DATABASE_URL:
-    ASYNC_DATABASE_URL = settings.RAW_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+    ASYNC_DATABASE_URL = settings.RAW_DATABASE_URL.replace(
+        "postgresql://", "postgresql+asyncpg://"
+    )
 else:
     ASYNC_DATABASE_URL = settings.RAW_DATABASE_URL
 
 SYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
 
 # ==============================================================================
 # SELF-HEALING DATABASE INITIALIZATION (DEVELOPMENT ONLY)
@@ -39,7 +41,9 @@ SYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("postgresql+asyncpg://", "postgre
 def create_database_if_not_exists() -> None:
     """Verifies target db existence and boots a fresh instance if missing in DEV only."""
     if settings.ENVIRONMENT != "development":
-        logger.debug("Skipping automatic database creation (not in development environment).")
+        logger.debug(
+            "Skipping automatic database creation (not in development environment)."
+        )
         return
 
     try:
@@ -57,9 +61,9 @@ def create_database_if_not_exists() -> None:
         with default_engine.connect() as conn:
             result = conn.execute(
                 text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
-                {"db_name": db_name}
+                {"db_name": db_name},
             )
-            
+
             if not result.fetchone():
                 # Safe to interpolate now since db_name passed regex validation
                 conn.execute(text(f"CREATE DATABASE {db_name}"))
@@ -68,11 +72,12 @@ def create_database_if_not_exists() -> None:
                 logger.info(f"Database '{db_name}' verified and ready.")
 
         default_engine.dispose()
-        
+
     except Exception as e:
         logger.error(f"Failed to verify or create database during startup: {e}")
         # Fail fast instead of swallowing the exception
         raise
+
 
 # Trigger initialization (safely gated by environment checks)
 create_database_if_not_exists()
@@ -85,24 +90,22 @@ async_engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_recycle=settings.DB_POOL_RECYCLE  # Prevents connections from dying silently
+    pool_recycle=settings.DB_POOL_RECYCLE,  # Prevents connections from dying silently
 )
 
 async_session_factory = async_sessionmaker(
-    bind=async_engine,
-    class_=AsyncSession,
-    expire_on_commit=False
+    bind=async_engine, class_=AsyncSession, expire_on_commit=False
 )
 
 # ==============================================================================
 # CORE RELATIONAL SYNCHRONOUS ENGINE TRACKS (BACKWARD COMPATIBILITY)
 # ==============================================================================
 sync_engine = create_engine(
-    SYNC_DATABASE_URL, 
+    SYNC_DATABASE_URL,
     pool_pre_ping=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_recycle=settings.DB_POOL_RECYCLE
+    pool_recycle=settings.DB_POOL_RECYCLE,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
 
@@ -110,9 +113,12 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
 # expects a plain synchronous `engine` name.
 engine = sync_engine
 
+
 class Base(DeclarativeBase):
     """Modern DeclarativeBase subclass mapping python models to database tables cleanly."""
+
     pass
+
 
 # ==============================================================================
 # DEPENDENCY INJECTION GENERATORS
@@ -121,10 +127,10 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_factory() as session:
         yield session
 
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-

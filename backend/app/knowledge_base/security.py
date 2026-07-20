@@ -15,6 +15,7 @@ def new_fence_tag(prefix: str = "CTX") -> str:
     # Combines your prefix with 12 random hex characters (e.g., 'CTX_a4b2c8f1e3d5')
     return f"{prefix}_{secrets.token_hex(6)}"
 
+
 # --- UNICODE & OBFUSCATION DETECTORS ---
 
 # List of hidden, zero-width characters attackers use to split bad words (e.g., 'i‌g‌n‌o‌r‌e')
@@ -26,8 +27,7 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
 # Regex to detect if an attacker is trying to manually type fake XML tags or system boundaries
 _FENCE_LOOKALIKE_RE = re.compile(
-    r"(</?\s*ctx[_a-z0-9]*\s*>|<\|im_(?:start|end)\|>)|\[\s*system\s*\]", 
-    re.IGNORECASE
+    r"(</?\s*ctx[_a-z0-9]*\s*>|<\|im_(?:start|end)\|>)|\[\s*system\s*\]", re.IGNORECASE
 )
 
 
@@ -41,16 +41,16 @@ def sanitize_untrusted_text(text: str) -> str:
 
     # Step 1: Normalize Unicode layout (NFKC smashes complex script characters into normal text)
     normalized = unicodedata.normalize("NFKC", text)
-    
+
     # Step 2: Vaporize all invisible zero-width characters sneakily hidden in words
     normalized = _ZERO_WIDTH_RE.sub("", normalized)
-    
+
     # Step 3: Strip away background computer control characters
     normalized = _CONTROL_CHARS_RE.sub("", normalized)
-    
+
     # Step 4: Locate fake context tag attempts and neutralize them into a harmless flag string
     normalized = _FENCE_LOOKALIKE_RE.sub("[removed]", normalized)
-    
+
     # Step 5: Clean up spacing (Safe ReDoS-protected spacing compression)
     # Using simple regex to collapse white space without catastrophic backtracking
     normalized = re.sub(r"\n\s*\n\s*\n+", "\n\n", normalized)
@@ -63,17 +63,19 @@ def sanitize_untrusted_text(text: str) -> str:
 
 _SUSPICIOUS_PATTERNS = [
     # English attack variants targeting system prompt rules
-    re.compile(r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b", re.I),
+    re.compile(
+        r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b", re.I
+    ),
     re.compile(r"\bdisregard\s+(?:all\s+)?(?:previous|prior|above)\b", re.I),
     re.compile(r"\byou\s+are\s+now\s+(?:a|an)\b", re.I),
     re.compile(r"\bsystem\s*prompt\b", re.I),
     re.compile(r"\breveal\s+(?:your|the)\s+(?:system\s+)?prompt\b", re.I),
-    
     # Swahili/Sheng regional attack filters (The East African Guardrail List)
-    re.compile(r"\bpuuza\s+maelekezo\b", re.I),     # "Ignore instructions"
-    re.compile(r"\bsahau\s+maagizo\b", re.I),        # "Forget directions/orders"
-    re.compile(r"\bacha\s+kufuata\s+kanuni\b", re.I), # "Stop following guidelines/rules"
-    
+    re.compile(r"\bpuuza\s+maelekezo\b", re.I),  # "Ignore instructions"
+    re.compile(r"\bsahau\s+maagizo\b", re.I),  # "Forget directions/orders"
+    re.compile(
+        r"\bacha\s+kufuata\s+kanuni\b", re.I
+    ),  # "Stop following guidelines/rules"
     # Redundant check for bracket block tags
     re.compile(r"</?\s*ctx[_a-z0-9]*\s*>", re.I),
 ]
@@ -96,17 +98,22 @@ def flag_suspicious_upload(text: str) -> list[str]:
 # --- INTELLECTUAL PROPERTY & DEEP SECRET SCANNERS ---
 
 _SECRET_PATTERNS = [
-    re.compile(r"\bsk-ant-[a-zA-Z0-9_-]{20,}\b"),            # Anthropic/Claude API Tokens
-    re.compile(r"\bsk-[a-zA-Z0-9]{20,}\b"),                     # Standard OpenAI Secret Tokens
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                        # Amazon Web Services (AWS) Access Keys
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),     # Secure RSA/SSL Private Keys
-    re.compile(r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b"), # JWT Auth Tokens
-    re.compile(r"\bxox[baprs]-[a-zA-Z0-9-]{10,}\b"),           # Slack Workspace Integration Tokens
+    re.compile(r"\bsk-ant-[a-zA-Z0-9_-]{20,}\b"),  # Anthropic/Claude API Tokens
+    re.compile(r"\bsk-[a-zA-Z0-9]{20,}\b"),  # Standard OpenAI Secret Tokens
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),  # Amazon Web Services (AWS) Access Keys
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),  # Secure RSA/SSL Private Keys
+    re.compile(
+        r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b"
+    ),  # JWT Auth Tokens
+    re.compile(
+        r"\bxox[baprs]-[a-zA-Z0-9-]{10,}\b"
+    ),  # Slack Workspace Integration Tokens
 ]
 
 
 class EmbeddedSecretError(ValueError):
     """Triggered when corporate cryptographic data is detected inside open text buffers."""
+
     pass
 
 

@@ -11,7 +11,7 @@ try:
     redis_client = redis.from_url(
         os.getenv("REDIS_URL", "redis://localhost:6379"),
         decode_responses=True,
-        ssl_cert_reqs=None  # required for Upstash SSL on Windows
+        ssl_cert_reqs=None,  # required for Upstash SSL on Windows
     )
     redis_client.ping()
     print("Redis connected successfully")
