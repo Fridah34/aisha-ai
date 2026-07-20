@@ -1,12 +1,11 @@
-// src/context/WebSocketContext.jsx
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
-import { getWebSocketUrl } from '../api/client'
+import { getWebSocketUrl, getCurrentBusinessId } from '../api/client'
 import { useAuth } from '../hooks/useAuth'
 
 const WebSocketContext = createContext()
 
 export function WebSocketProvider({ children }) {
-  const { user, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
   const [isConnected, setIsConnected] = useState(false)
   const [lastMessage, setLastMessage] = useState(null)
   const [connectionError, setConnectionError] = useState(null)
@@ -16,10 +15,25 @@ export function WebSocketProvider({ children }) {
   const MAX_RECONNECT_ATTEMPTS = 5
 
   const connect = useCallback(() => {
-    if(!isAuthenticated || !user?.id ) {
-      console.warn('WebSocket: no authenticated user yet, skipping connect')
+    if (!isAuthenticated) {
+      console.warn('WebSocket: not authenticated yet, skipping connect')
       return
     }
+
+    // Guard: fetch and validate businessId before attempting connection
+    let businessId = null
+    try {
+      businessId = getCurrentBusinessId()
+    } catch (e) {
+      console.warn('WebSocket: error fetching businessId, skipping connect')
+      return
+    }
+
+    if (!businessId) {
+      console.warn('WebSocket: missing businessId, skipping connect')
+      return
+    }
+
     // Close existing connection if any
     if (wsRef.current) {
       try {
@@ -31,9 +45,9 @@ export function WebSocketProvider({ children }) {
     }
 
     try {
-      // Use the same host as your API
-      const wsUrl = `${getWebSocketUrl()}/${user.id}`
-      console.log(` Attempting WebSocket connection to: ${wsUrl}`)
+      // Construct WebSocket URL with businessId (UUID)
+      const wsUrl = `${getWebSocketUrl()}/${businessId}`
+      console.log(`Attempting WebSocket connection to: ${wsUrl}`)
       
       const ws = new WebSocket(wsUrl)
       
@@ -103,7 +117,6 @@ export function WebSocketProvider({ children }) {
       ws.onerror = (error) => {
         console.error('WebSocket error:', error)
         setConnectionError('WebSocket connection error')
-        // The onclose handler will handle reconnection
       }
 
       wsRef.current = ws
@@ -111,11 +124,11 @@ export function WebSocketProvider({ children }) {
       console.error('Failed to create WebSocket connection:', error)
       setConnectionError(error.message)
       
-      // Attempt reconnectionssss
+      // Attempt reconnection
       if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts.current += 1
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)
-        console.log(` Reconnecting in ${delay}ms... (Attempt ${reconnectAttempts.current})`)
+        console.log(`Reconnecting in ${delay}ms... (Attempt ${reconnectAttempts.current})`)
         
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current)
@@ -123,7 +136,7 @@ export function WebSocketProvider({ children }) {
         reconnectTimeoutRef.current = setTimeout(connect, delay)
       }
     }
-  }, [ isAuthenticated, user?.id])
+  }, [isAuthenticated])
 
   // Send a message through WebSocket
   const sendMessage = useCallback((message) => {
@@ -155,9 +168,9 @@ export function WebSocketProvider({ children }) {
     return () => clearInterval(pingInterval)
   }, [])
 
-  // Connect on mount
+  // Connect on mount and when authentication changes
   useEffect(() => {
-    if (isAuthenticated && user?.id) {
+    if (isAuthenticated) {
       connect()
     } else {
       if (wsRef.current) {
@@ -183,7 +196,7 @@ export function WebSocketProvider({ children }) {
         }
       }
     }
-  }, [connect, isAuthenticated, user?.id])
+  }, [connect, isAuthenticated])
 
   const value = {
     isConnected,

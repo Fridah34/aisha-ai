@@ -11,15 +11,15 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision= '0642d5f701d1'
-down_revision  = 'd8fcf4e36829'
+revision = "0642d5f701d1"
+down_revision = "d8fcf4e36829"
 branch_labels = None
-depends_on  = None
+depends_on = None
 
 business_type_enum = sa.Enum(
-    "retail", "fashion", "services", "food",
-    name="businesstype"
+    "retail", "fashion", "services", "food", name="businesstype"
 )
+
 
 def upgrade() -> None:
     """Upgrade schema."""
@@ -35,7 +35,6 @@ def upgrade() -> None:
 
     # Step 3: enforce NOT NULL now that every row has a valid value
     op.alter_column("users", "business_type", nullable=False)
-
 
 
 def downgrade() -> None:

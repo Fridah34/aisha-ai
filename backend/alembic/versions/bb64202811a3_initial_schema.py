@@ -1,16 +1,16 @@
 """initial schema
 
 Revision ID: bb64202811a3
-Revises: 
+Revises:
 Create Date: 2026-06-08 14:38:57.042114
 
 """
+
 from typing import Sequence, Union
 
 
-
 # revision identifiers, used by Alembic.
-revision: str = 'bb64202811a3'
+revision: str = "bb64202811a3"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

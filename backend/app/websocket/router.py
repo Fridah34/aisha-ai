@@ -1,32 +1,34 @@
-from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends
-from sqlalchemy.orm import Session
-import json
 import asyncio
+import json
+import uuid
 from typing import Dict, Set
 
+from app.auth.utils import verify_access_token
 from app.database import get_db
 from app.models import User
-from app.auth.utils import verify_access_token
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["WebSocket"])
+
 
 # Store active connections
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[int, Set[WebSocket]] = {}
+        self.active_connections: Dict[uuid.UUID, Set[WebSocket]] = {}
 
-    def disconnect(self, websocket: WebSocket, user_id: int):
-        if user_id in self.active_connections:
-            self.active_connections[user_id].discard(websocket)
-            if not self.active_connections[user_id]:
-                del self.active_connections[user_id]
-        print(f"User {user_id} disconnected")
+    def disconnect(self, websocket: WebSocket, business_id: uuid.UUID):
+        if business_id in self.active_connections:
+            self.active_connections[business_id].discard(websocket)
+            if not self.active_connections[business_id]:
+                del self.active_connections[business_id]
+        print(f"Business {business_id} disconnected")
 
-    async def broadcast_to_user(self, user_id: int, message: dict):
-        if user_id in self.active_connections:
+    async def broadcast_to_business(self, business_id: uuid.UUID, message: dict):
+        if business_id in self.active_connections:
             message_json = json.dumps(message)
             dead_connections = []
-            for connection in self.active_connections[user_id]:
+            for connection in self.active_connections[business_id]:
                 try:
                     await connection.send_text(message_json)
                 except Exception as e:
@@ -34,7 +36,7 @@ class ConnectionManager:
                     dead_connections.append(connection)
 
             for conn in dead_connections:
-                self.disconnect(conn, user_id)
+                self.disconnect(conn, business_id)
 
 
 manager = ConnectionManager()
@@ -62,10 +64,11 @@ def _authenticate_websocket(websocket: WebSocket, db: Session) -> User | None:
     return user
 
 
-@router.websocket("/ws/conversations/{user_id}")
+@router.websocket("/ws/{business_id}")
+@router.websocket("/ws/conversations/{business_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
-    user_id: int,
+    business_id: uuid.UUID,
     db: Session = Depends(get_db),
 ):
     user = _authenticate_websocket(websocket, db)
@@ -73,66 +76,81 @@ async def websocket_endpoint(
         await websocket.close(code=4401, reason="Not authenticated")
         return
 
-    if user.id != user_id:
-        await websocket.close(code=4403, reason="User mismatch")
+    if user.id != business_id:
+        await websocket.close(code=4403, reason="Business mismatch")
         return
 
-    print(f"Websocket connection attempt from user {user_id}")
+    print(f"Websocket connection attempt for business {business_id}")
 
     try:
         await websocket.accept()
-        print(f"WebSocket accepted for user {user_id}")
+        print(f"WebSocket accepted for business {business_id}")
 
-        if user_id not in manager.active_connections:
-            manager.active_connections[user_id] = set()
-        manager.active_connections[user_id].add(websocket)
+        if business_id not in manager.active_connections:
+            manager.active_connections[business_id] = set()
+        manager.active_connections[business_id].add(websocket)
 
-        await websocket.send_text(json.dumps({
-            "type": "connection_established",
-            "user_id": user_id,
-            "message": "Connected to AISHA real-time updates"
-        }))
-        print(f"Sent connection confirmation to user {user_id}")
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "connection_established",
+                    "business_id": str(business_id),
+                    "message": "Connected to AISHA real-time updates",
+                }
+            )
+        )
+        print(f"Sent connection confirmation for business {business_id}")
 
         while True:
             try:
                 data = await websocket.receive_text()
                 try:
                     message = json.loads(data)
-                    print(f"Received from client {user_id}: {message}")
+                    print(f"Received from business client {business_id}: {message}")
 
                     if message.get("type") == "ping":
                         await websocket.send_text(json.dumps({"type": "pong"}))
-                        print(f"Sent pong to user {user_id}")
+                        print(f"Sent pong to business {business_id}")
                     elif message.get("type") == "test":
-                        await websocket.send_text(json.dumps({
-                            "type": "test_response",
-                            "message": f"Echo: {message.get('message')}"
-                        }))
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "test_response",
+                                    "message": f"Echo: {message.get('message')}",
+                                }
+                            )
+                        )
                 except json.JSONDecodeError:
                     if data == "ping":
                         await websocket.send_text("pong")
-                        print(f"Sent pong to user {user_id}")
+                        print(f"Sent pong to business {business_id}")
 
             except WebSocketDisconnect:
-                print(f"WebSocket disconnect detected for user {user_id}")
+                print(f"WebSocket disconnect detected for business {business_id}")
                 break
             except Exception as e:
-                print(f"Error in WebSocket loop for user {user_id}: {e}")
+                print(f"Error in WebSocket loop for business {business_id}: {e}")
                 break
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket, user_id)
-        print(f"User {user_id} disconnected")
+        manager.disconnect(websocket, business_id)
+        print(f"Business {business_id} disconnected")
     except Exception as e:
-        print(f"WebSocket error for user {user_id}: {e}")
-        manager.disconnect(websocket, user_id)
+        print(f"WebSocket error for business {business_id}: {e}")
+        manager.disconnect(websocket, business_id)
 
 
-async def broadcast_status_change(user_id: int, customer_id: int, new_status: str):
-    await manager.broadcast_to_user(user_id, {
-        "type": "status_change",
-        "customer_id": customer_id,
-        "new_status": new_status,
-        "timestamp": asyncio.get_event_loop().time()
-    })
+async def broadcast_status_change(
+    business_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    new_status: str,
+):
+    await manager.broadcast_to_business(
+        business_id,
+        {
+            "type": "status_change",
+            "customer_id": str(customer_id),
+            "new_status": new_status,
+            "timestamp": asyncio.get_event_loop().time(),
+        },
+    )

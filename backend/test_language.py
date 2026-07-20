@@ -7,18 +7,15 @@ test_messages = [
     ("Bei yake ni ngapi?", "sw"),
     ("Asante sana", "sw"),
     ("Sawa", "sw"),
-
     # Clear English
     ("Hi, what shoes do you have?", "en"),
     ("How much is the Nike Air Force 1?", "en"),
     ("I want to place an order", "en"),
     ("Ok", "en"),
-
     # Short messages — hardest to detect
     ("Bei?", "sw"),
     ("Nini?", "sw"),
     ("Yes", "en"),
-
     # Sheng / mixed
     ("Ninataka red sneakers size 8", "sw"),
     ("Hi, nataka order moja", "sw"),
@@ -38,7 +35,9 @@ for message, expected in test_messages:
     else:
         failed += 1
     print(f"{status} '{message}'")
-    print(f"   Expected: {get_language_name(expected)} | Got: {get_language_name(result)}")
+    print(
+        f"   Expected: {get_language_name(expected)} | Got: {get_language_name(result)}"
+    )
 
 print()
 print(f"Results: {passed} passed, {failed} failed out of {len(test_messages)} tests")

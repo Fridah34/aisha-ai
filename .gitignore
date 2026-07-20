@@ -4,6 +4,10 @@
 
 # 1. Environment Configurations (Frontend & Backend Secrets)
 .env
+.venv/
+__pycache__/
+*.pyc
+.env
 .env.*
 .env
 .env.local
@@ -39,3 +43,5 @@ pip-delete-this-directory.txt
 # 5. OS Specific Files
 .DS_Store
 Thumbs.db
+
+.history

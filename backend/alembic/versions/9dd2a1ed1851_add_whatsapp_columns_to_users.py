@@ -5,13 +5,13 @@ Revises: bf45cd3eb00b
 Create Date: 2026-06-13 15:06:28.697302
 
 """
+
 from typing import Sequence, Union
 
 
-
 # revision identifiers, used by Alembic.
-revision: str = '9dd2a1ed1851'
-down_revision: Union[str, Sequence[str], None] = 'bf45cd3eb00b'
+revision: str = "9dd2a1ed1851"
+down_revision: Union[str, Sequence[str], None] = "bf45cd3eb00b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

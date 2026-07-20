@@ -1,9 +1,12 @@
+import uuid
+
+from app.categories.schemas import CategoryCreate, CategoryUpdate
+from app.models import Category, Product
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models import Category, Product
-from app.categories.schemas import CategoryCreate, CategoryUpdate
 
-def get_categories_for_business(db: Session, user_id: int) -> list[dict]:
+
+def get_categories_for_business(db: Session, business_id: uuid.UUID) -> list[dict]:
     """
     Returns every category for one business, ordered for display, each
     annotated with a live product_count.
@@ -16,7 +19,7 @@ def get_categories_for_business(db: Session, user_id: int) -> list[dict]:
     rows = (
         db.query(Category, func.count(Product.id).label("product_count"))
         .outerjoin(Product, Product.category_id == Category.id)
-        .filter(Category.user_id == user_id)
+        .filter(Category.business_id == business_id)
         .group_by(Category.id)
         .order_by(Category.display_order, Category.name)
         .all()
@@ -25,7 +28,7 @@ def get_categories_for_business(db: Session, user_id: int) -> list[dict]:
     return [
         {
             "id": category.id,
-            "user_id": category.user_id,
+            "business_id": category.business_id,
             "name": category.name,
             "description": category.description,
             "display_order": category.display_order,
@@ -37,31 +40,37 @@ def get_categories_for_business(db: Session, user_id: int) -> list[dict]:
     ]
 
 
-def get_category_by_id(db: Session, category_id: int, user_id: int) -> Category | None:
+def get_category_by_id(
+    db: Session, category_id: uuid.UUID, business_id: uuid.UUID
+) -> Category | None:
     """
     Fetches a single category, scoped to the owning business — same
     scoping reasoning as products/crud.py's get_product_by_id.
     """
     return (
         db.query(Category)
-        .filter(Category.id == category_id, Category.user_id == user_id)
+        .filter(Category.id == category_id, Category.business_id == business_id)
         .first()
     )
 
 
-def create_category(db: Session, category_data: CategoryCreate, user_id: int) -> Category:
+def create_category(
+    db: Session, category_data: CategoryCreate, business_id: uuid.UUID
+) -> Category:
     """
     Inserts a new category row for the authenticated business.
-    user_id comes from the caller (the authenticated session), never
+    business_id comes from the caller (the authenticated session), never
     from category_data, and display_order is always computed — new
     categories always land at the end of the list without the owner
     needing to know the current highest.
     """
-    data = category_data.model_dump(exclude={"display_order", "user_id"}, exclude_unset=True)
+    data = category_data.model_dump(
+        exclude={"display_order", "business_id"}, exclude_unset=True
+    )
     new_category = Category(
         **data,
-        user_id=user_id,
-        display_order=get_next_display_order(db, user_id),
+        business_id=business_id,
+        display_order=get_next_display_order(db, business_id),
     )
     db.add(new_category)
     db.commit()
@@ -94,7 +103,7 @@ def delete_category(db: Session, category: Category) -> None:
     db.commit()
 
 
-def get_next_display_order(db: Session, user_id: int) -> int:
+def get_next_display_order(db: Session, business_id: uuid.UUID) -> int:
     """
     Returns one more than the business's current highest display_order,
     or 0 if they have no categories yet. Same reasoning as get_inbox()'s
@@ -102,8 +111,7 @@ def get_next_display_order(db: Session, user_id: int) -> int:
     """
     max_order = (
         db.query(func.max(Category.display_order))
-        .filter(Category.user_id == user_id)
+        .filter(Category.business_id == business_id)
         .scalar()
     )
     return 0 if max_order is None else max_order + 1
-

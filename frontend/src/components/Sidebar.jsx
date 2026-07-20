@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Package,
-  Settings, LogOut, Store,Tags,ShoppingCart
+  BookOpen, Settings, LogOut, Store,
 } from 'lucide-react'
 import { getSettings } from '../api/settings'
 import { useAuth } from '../hooks/useAuth'
@@ -11,8 +11,7 @@ const links = [
   { to: '/overview',      label: 'Overview',      icon: LayoutDashboard },
   { to: '/conversations', label: 'Conversations', icon: MessageSquare },
   { to: '/products',      label: 'Products',      icon: Package },
-  { to: '/categories',      label: 'Categories',      icon: Tags },
-  { to: '/orders',      label: 'Orders',      icon: ShoppingCart },
+  { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
   { to: '/settings',      label: 'Settings',      icon: Settings },
 ]
 
@@ -44,7 +43,7 @@ export default function Sidebar() {
           <Store size={16} className="text-slate-900" />
         </div>
         <div>
-          <p className="text-white font-bold text-base leading-tight">{ 'AISHA AI '}</p>
+          <p className="text-white font-bold text-base leading-tight">{user?.name || 'AISHA'}</p>
           <p className="text-amber-500 text-xs font-medium">AI Sales Assistant</p>
         </div>
       </div>
@@ -57,7 +56,7 @@ export default function Sidebar() {
             to={to}
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium
-               transition-colors
+               transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset
                ${isActive
                  ? 'bg-amber-500 text-slate-900'
                  : 'text-slate-400 hover:text-white hover:bg-slate-800'}`

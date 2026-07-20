@@ -1,12 +1,13 @@
 """
-It's a one-time setup script-creates AISHA's whatsapp content templates via Twilio's 
+It's a one-time setup script-creates AISHA's whatsapp content templates via Twilio's
 Content API.Run this manually whenever you need to create or recreate a template shape.Not part of the live webhook/request path.
 
 Usage: python scripts/create_templates.py
 """
+
 import requests
 import os
-import json 
+import json
 from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
@@ -19,6 +20,7 @@ if not ACCOUNT_SID or not AUTH_TOKEN:
 
 CONTENT_API_URL = "https://content.twilio.com/v1/Content"
 
+
 def create_list_picker_template():
     """Reusable for BOTH the category menu and stire list-same shape
     (a body message + up to 10 tappable items), different content filled
@@ -29,12 +31,11 @@ def create_list_picker_template():
         "language": "en",
         "variables": {str(i): f"sample_{i}" for i in range(1, 12)},
         "types": {
-            "twilio/list-picker":{
+            "twilio/list-picker": {
                 "body": "{{1}}",
                 "button": "View Options",
-                "items" : [
-                    {"item": f"{{{{{i}}}}}", "id":f"opt_{i -1}"}
-                    for i in range(2, 12)
+                "items": [
+                    {"item": f"{{{{{i}}}}}", "id": f"opt_{i - 1}"} for i in range(2, 12)
                 ],
             }
         },
@@ -78,6 +79,7 @@ def create_quick_reply_template():
     print(json.dumps(data, indent=2))
     return data.get("sid")
 
+
 def create_browse_more_template():
     """One-time setup - creates the post-checkout Quick Reply template.
     Separate from aisha_cart_action_fridah bacause button labels/ids are
@@ -86,12 +88,10 @@ def create_browse_more_template():
         "friendly_name": "aisha_post_checkout_fridah",
         "language": "en",
         "variables": {"1": "sample order confirmation text"},
-        "types":{
+        "types": {
             "twilio/quick-reply": {
                 "body": "{{1}}",
-                "actions": [
-                    {"title": "Browse more", "id": "browse_more"}
-                ],
+                "actions": [{"title": "Browse more", "id": "browse_more"}],
             }
         },
     }
@@ -104,16 +104,14 @@ def create_browse_more_template():
     print("\n=== BROWSE MORE TEMPLATE ===")
     print(json.dumps(data, indent=2))
     return data.get("sid")
-    
+
 
 if __name__ == "__main__":
-    #list_sid = create_list_picker_template()
-    #quick_reply_sid = create_quick_reply_template()
+    # list_sid = create_list_picker_template()
+    # quick_reply_sid = create_quick_reply_template()
     browse_more_sid = create_browse_more_template()
-    
+
     print("\n\n=== SAVE THESE TO YOUR .env ===")
-    #print(f"TWILIO_LIST_PICKER_SID={list_sid}")
-    #print(f"TWILIO_QUICK_REPLY_SID={quick_reply_sid}")
+    # print(f"TWILIO_LIST_PICKER_SID={list_sid}")
+    # print(f"TWILIO_QUICK_REPLY_SID={quick_reply_sid}")
     print(f"TWILIO_BROWSE_MORE_SID={browse_more_sid}")
-
-
