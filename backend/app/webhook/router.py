@@ -20,7 +20,7 @@ from app.flows.marketplace_flow import (  # noqa: E402
     is_checkout_command, reset_to_menu, get_products_for_business_category,
     resolve_product_choice, get_or_create_cart, resolve_size_choice,
     parse_quantity, add_item_to_cart, format_cart_summary,
-    parse_name_and_contact, create_orders_from_cart, format_product_list_for_business,
+    parse_name_and_contact, create_orders_from_cart,
 )
 
 
