@@ -49,6 +49,10 @@ class Settings:
     DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
     DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
 
+    # 4. Knowledge Base upload limit (MB), configurable per environment so it
+    # can be raised without a code change as real business documents grow.
+    KNOWLEDGE_BASE_MAX_UPLOAD_MB = int(os.getenv("KNOWLEDGE_BASE_MAX_UPLOAD_MB", "25"))
+
 
 # Instantiate the settings instance to be imported elsewhere
 settings = Settings()

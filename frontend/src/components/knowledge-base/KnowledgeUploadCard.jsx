@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { BookOpen } from 'lucide-react'
 import { uploadKnowledgeBase } from '../../services/knowledgeBaseService'
+import useKnowledgeBaseConfig from '../../hooks/useKnowledgeBaseConfig'
 import UploadDropzone from './UploadDropzone'
 import UploadStatus from './UploadStatus'
 
 export default function KnowledgeUploadCard() {
+	const { config } = useKnowledgeBaseConfig()
 	const [status, setStatus] = useState('idle')
 	const [fileName, setFileName] = useState('')
 	const [message, setMessage] = useState('')
@@ -51,6 +53,7 @@ export default function KnowledgeUploadCard() {
 			</div>
 
 			<UploadDropzone
+				config={config}
 				disabled={status === 'uploading'}
 				onFileSelected={handleFileSelected}
 				onValidationError={handleValidationError}

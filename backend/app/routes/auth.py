@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 # ===================ENVIRONMENT CONFIG====================
 # Cookies marked `secure=True` are only stored/sent by browsers over HTTPS.
-# Local dev runs on plain HTTP (localhost:5173 / 127.0.0.1:8000), so `secure`
+# Local dev runs on plain HTTP (localhost:5173 / localhost:8000), so `secure`
 # must be False there or the browser silently drops the cookie entirely.
 # Set ENVIRONMENT=production in your deployment's .env once real HTTPS is in place.
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
