@@ -247,12 +247,19 @@ async def get_document_file(
     extension = Path(document.stored_name).suffix.lower()
     content = raw_path.read_bytes()
 
+    safe_header_name = (
+    document.file_name
+    .replace("\n", "")
+    .replace("\r", "")
+    .replace('"', "")
+)
+
     if extension in _INLINE_MEDIA_TYPES:
         media_type = _INLINE_MEDIA_TYPES[extension]
-        disposition = f'inline; filename="{document.file_name}"'
+        disposition = f'inline; filename="{safe_header_name}"'
     else:
         media_type = _DOWNLOAD_MEDIA_TYPES.get(extension, "application/octet-stream")
-        disposition = f'attachment; filename="{document.file_name}"'
+        disposition = f'attachment; filename="{safe_header_name}"'
 
     return Response(
         content=content,

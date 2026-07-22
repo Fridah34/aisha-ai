@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react'
 
 const ToastContext = createContext(null)
