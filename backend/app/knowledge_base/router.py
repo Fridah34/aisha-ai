@@ -9,6 +9,7 @@ from app.database import get_session
 from app.knowledge_base.config import (
     MAX_UPLOAD_MB,
     SUPPORTED_FORMATS,
+    validate_upload,
 )
 from app.knowledge_base.manager import IngestionRejectedError, KnowledgeBaseManager
 from app.knowledge_base.models import DocumentStatus, KnowledgeDocument
