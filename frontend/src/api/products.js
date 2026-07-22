@@ -1,12 +1,4 @@
-<<<<<<< HEAD
-import { apiFetch } from './client'
-=======
-import { apiFetch, getCurrentBusinessId, formatApiError } from './client'
-
-function businessQuery() {
-  return `business_id=${encodeURIComponent(getCurrentBusinessId())}`
-}
->>>>>>> origin/Fridah
+import { apiFetch, formatApiError } from './client'
 
 export const getProducts = () =>
   apiFetch('/products')
