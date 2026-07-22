@@ -91,6 +91,9 @@ def send_list_picker(to_phone: str, body_text: str, items: list[str]) -> bool:
         content_variables = {"1": body_text}
         for i in range(10):
             content_variables[str(i + 2)] = items[i] if i < len(items) else " "
+            
+        print(f"[DEBUG] content_sid={TWILIO_LIST_PICKER_SID}")
+        print(f"[DEBUG] content_variables={json.dumps(content_variables, indent=2)}")
 
         msg = client.messages.create(
             from_=f"whatsapp:{from_number}",

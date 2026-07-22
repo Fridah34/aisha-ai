@@ -19,7 +19,7 @@ class ProductCreate(BaseModel):
     description: Optional[str] = None
     price: Decimal = Field(..., gt=0)
     is_available: bool = True
-    category: Optional[str] = None
+    category_id: Optional[uuid.UUID] =None 
     variant_label: Optional[str] = None
     variant_options: Optional[str] = None
     unit: Optional[str] = None
@@ -32,7 +32,7 @@ class ProductUpdate(BaseModel):
     description: Optional[str] = None
     price: Optional[Decimal] = Field(None, gt=0)
     is_available: Optional[bool] = None
-    category: Optional[str] = None
+    category_id: Optional[uuid.UUID] = None
     variant_label: Optional[str] = None
     variant_options: Optional[str] = None
     unit: Optional[str] = None
@@ -52,7 +52,7 @@ class ProductResponse(BaseModel):
     description: Optional[str]
     price: Decimal
     is_available: bool
-    category: Optional[str] = None
+    category_id: Optional[uuid.UUID] = None
     variant_label: Optional[str] = None
     variant_options: Optional[str] = None
     unit: Optional[str] = None

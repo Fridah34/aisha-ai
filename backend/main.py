@@ -4,7 +4,6 @@ import app.models
 from app.categories.router import router as categories_router
 from app.config import settings
 from app.conversations.router import router as conversations_router
-from app.database import Base, engine
 from app.knowledge_base.router import router as knowledge_base_router
 from app.orders.router import router as orders_router
 from app.products.router import router as products_router
@@ -17,7 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # --- APPLICATION SETUP ---
-Base.metadata.create_all(bind=engine)
+#Base.metadata.drop_all(bind=engine)
+#Base.metadata.create_all(bind=engine)
+
+print("DB HOST:", os.getenv("DATABASE_URL"))
 
 app = FastAPI(
     title="AISHA AI",

@@ -11,6 +11,7 @@ from app.models import (
     ConversationState,
     Customer,
     HandoverStatus,
+    Language,
     MessageRole,
     Product,
     User,
@@ -200,7 +201,7 @@ def get_conversation_history(
 
     history = []
     for msg in messages:
-        role = "user" if msg.role == MessageRole.USER else "assistant"
+        role = "user" if msg.role == MessageRole.Customer else "assistant"
         history.append({"role": role, "content": msg.content})
 
     # Remove any leading assistant messages (conversations should start with user)
@@ -223,21 +224,30 @@ def save_message(
     delivery_status: str | None = None,
 ) -> None:
     """Save a message to PostgreSQL and update Redis cache."""
+    
+    ROLE_MAP = {
+        "user": MessageRole.Customer,
+        "customer": MessageRole.Customer,
+        "assistant": MessageRole.Assistant,
+        "human": MessageRole.Human,
+    }
+    
+    LANGUAGE_MAP = {"EN": Language.en, "SW": Language.sw}
 
     # saves to PostgreSQL permanently and updates Redis simultaneously
     new_message = Conversation(
         customer_id=customer_id,
         business_id=business_id,
-        role=MessageRole(role.upper()),
+        role=ROLE_MAP[role.lower()],
         content=content,
-        language=language,
+        language=LANGUAGE_MAP.get(language.upper(), Language.en),
         delivery_status=delivery_status,
     )
     db.add(new_message)
     db.commit()
 
     # Update Redis cache immediately
-    history_role = "user" if role.upper() == MessageRole.USER.value else "assistant"
+    history_role = "user" if role.lower() in ("user", "customer") else "assistant"
     cache.append_to_conversation_cache(
         customer_id=customer_id,
         business_id=business_id,
@@ -257,7 +267,7 @@ def normalize_phone(phone_number: str) -> str:
 
 
 def get_or_create_customer(
-    phone_number: str, db: Session, profile_name: str | None = None
+    phone_number: str, business_id: uuid.UUID, db: Session, profile_name: str | None = None
 ) -> Customer:
     """Find a customer by phone number or create them if first message."""
     # Phone number is the customer's only identity — no accounts needed.
@@ -265,10 +275,14 @@ def get_or_create_customer(
 
     phone = normalize_phone(phone_number)
 
-    customer = db.query(Customer).filter(Customer.phone_number == phone).first()
+    customer = (
+        db.query(Customer)
+        .filter(Customer.phone_number == phone, Customer.business_id == business_id)
+        .first()
+    )
 
     if not customer:
-        customer = Customer(phone_number=phone, name=profile_name)
+        customer = Customer(phone_number=phone, business_id=business_id, name=profile_name)
         db.add(customer)
         db.commit()
         db.refresh(customer)
@@ -403,7 +417,7 @@ def process_customer_message(
 ) -> dict:
     """Main orchestrator — called by the WhatsApp webhook on every incoming customer message."""
     # 1. Find or create customer
-    customer = get_or_create_customer(phone_number, db, profile_name)
+    customer = get_or_create_customer(phone_number,business_id, db, profile_name)
 
     # 2. Detect language for logging
     language = detect_language(message_text)

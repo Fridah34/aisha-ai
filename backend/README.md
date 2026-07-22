@@ -1,7 +1,6 @@
 # AISHA AI — Backend
 
-> FastAPI backend for the AISHA AI WhatsApp sales assistant.  
-> Handles WhatsApp webhooks, AI conversation engine, authentication, and database operations.
+FastAPI backend for the AISHA AI WhatsApp sales assistant. Handles WhatsApp webhooks, the AI conversation engine, the marketplace/cart/checkout flow, order tracking, and the business dashboard API.
 
 ---
 
@@ -9,333 +8,291 @@
 
 | Tool | Purpose |
 |---|---|
-| FastAPI | Web framework — handles routes, requests, responses |
+| FastAPI | Web framework — routes, requests, responses |
 | Uvicorn | ASGI server that runs FastAPI |
-| SQLAlchemy | ORM — interact with PostgreSQL using Python objects |
-| Alembic | Database migrations — version control for your database schema |
-| PostgreSQL | Production database |
-| psycopg2-binary | PostgreSQL driver (used by SQLAlchemy under the hood) |
-| python-dotenv | Loads environment variables from `.env` file |
+| SQLAlchemy | ORM — Python objects instead of raw SQL |
+| Alembic | Database migrations — version control for the schema |
+| PostgreSQL (Neon) | Shared production/dev database |
+| psycopg2-binary | PostgreSQL driver |
+| python-dotenv | Loads `.env` |
 | passlib[bcrypt] | Password hashing |
-| python-jose | JWT token creation and verification |
-| httpx | HTTP client for calling WhatsApp API |
-| google-auth | Google OAuth 2.0 (Sign in with Google) |
-| redis | Conversation caching (used in later weeks) |
+| python-jose | JWT auth |
+| httpx | HTTP client (Twilio, etc.) |
+| google-auth | Google OAuth 2.0 |
+| redis | Conversation + business prompt caching |
 | anthropic | Claude AI SDK |
 | google-generativeai | Gemini AI SDK |
+| twilio | WhatsApp messaging + Content Templates |
 
 ---
 
 ## Prerequisites
 
-Make sure you have these installed before anything else:
+```bash
+python --version      # 3.10 or higher
+pip --version
+```
+
+---
+
+## First-Time Setup
+
+### 1. Clone and branch
 
 ```bash
-python --version      # Should be 3.10 or higher
-pip --version         # Comes with Python
-If you don't have Python, download it from https://python.org (choose 3.10 or higher).
-
-First-Time Setup (Clone → Run)
-1. Clone the repository (if not done already)
-bash
 git clone https://github.com/YOUR-USERNAME/aisha-ai.git
 cd aisha-ai
-2. Create your branch from dev  
-bash
 git checkout dev
 git pull origin dev
 git checkout -b yourname/feature-name
-3. Create and activate the virtual environment
-A virtual environment keeps this project's dependencies isolated from other Python projects on your machine.
+```
 
-bash
+### 2. Virtual environment
+
+```bash
 cd backend
-python -m venv venv
-Activate it — this step is required every time you open a new terminal:
-
-Windows (Git Bash or Command Prompt):
-
-```
-bash
-source venv\Scripts\activate
-You'll know it's active when you see (venv) at the start of your terminal prompt.
-
-To deactivate when you're done working:
-
-bash
-deactivate
-
+python3 -m venv venv
+source venv/bin/activate       # Windows: source venv\Scripts\activate
 ```
 
+You'll see `(venv)` at the start of your prompt when it's active. `deactivate` to exit it.
 
-4. Install dependencies
-```
-bash
-pip install fastapi uvicorn sqlalchemy psycopg2-binary python-dotenv passlib[bcrypt] python-jose[cryptography] httpx google-auth google-auth-oauthlib redis anthropic google-generativeai
+### 3. Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
-This installs every package listed in requirements.txt at the exact versions the project was built with. Always use this file — do not install packages individually unless you're adding a new one.
 
-5. Set up your environment variables
-```
-bash
+Always install from this file, not one-off `pip install`s — it keeps everyone on the same package versions.
+
+### 4. Environment variables
+
+```bash
 cp .env.example .env
-Open the .env file and fill in your actual values:
+```
 
-env
-DATABASE_URL=postgresql://username:password@localhost:5432/aisha_db
+Fill in `.env`:
+
+```dotenv
+# Shared Neon database — same one for the whole team. Anything one
+# person adds, everyone sees.
+DATABASE_URL=postgresql://neondb_owner:*****************?sslmode=require&channel_binding=require
+DIRECT_DATABASE_URL=postgresql://neondb_owner:*****************?sslmode=require&channel_binding=require
+
 SECRET_KEY=your-secret-key-here
 ANTHROPIC_API_KEY=your-key-here
 GEMINI_API_KEY=your-key-here
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-WHATSAPP_TOKEN=your-whatsapp-token
-WHATSAPP_VERIFY_TOKEN=your-verify-token
-The .env file is gitignored — it will never be pushed to GitHub.
-Never share your keys. Never hardcode them in any Python file.
 
-Where to get each key:
+TWILIO_ACCOUNT_SID=your-twilio-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_WHATSAPP_NUMBER=your-sandbox-or-production-number
+TWILIO_LIST_PICKER_SID=see "Twilio Content Templates" below
+TWILIO_QUICK_REPLY_SID=see "Twilio Content Templates" below
+TWILIO_BROWSE_MORE_SID=see "Twilio Content Templates" below
 
-DATABASE_URL → PostgreSQL connection string (local)
+BASE_URL=your-public-url   # ngrok URL in dev, real domain in production
+```
 
-ANTHROPIC_API_KEY → https://console.anthropic.com
+`.env` is gitignored — never commit it, never hardcode keys in Python files.
 
-GEMINI_API_KEY → https://aistudio.google.com
+- `DATABASE_URL` — used by the running app (FastAPI, Redis-cached queries). Uses the **pooled** Neon connection.
+- `DIRECT_DATABASE_URL` — used by Alembic for migrations. Uses the **non-pooled** Neon connection — pooled connections can fail on some DDL operations.
 
-GOOGLE_CLIENT_ID/SECRET → https://console.cloud.google.com (OAuth credentials)
+### 5. Run migrations and start the server
 
-WHATSAPP_TOKEN → Meta Developer Portal (Week 3)
-
-SECRET_KEY → generate one by running: python -c "import secrets; print(secrets.token_hex(32))"
-
-6. Initialize Alembic for database migrations (First time only)
-Alembic manages database schema changes. You only need to set this up once:
-
-bash
-# Initialize Alembic (only needed once)
-alembic init alembic
-Then configure alembic/env.py to use your models (see the alembic/env.py file — it's already set up to import from app.database and app.models).
-
-7. Create and apply the initial database migration
-bash
-# Generate migration from your SQLAlchemy models
-alembic revision --autogenerate -m "initial schema"
-
-# Apply the migration to create tables
+```bash
 alembic upgrade head
-This creates all tables (users, products, customers, conversations, orders) in your PostgreSQL database.
-
-What these commands do:
-
-revision --autogenerate — compares your SQLAlchemy models against the database and generates a migration script
-
-upgrade head — applies all pending migrations (creates tables, adds columns, etc.)
-
-8. Run the backend server
-bash
 uvicorn main:app --reload
-Breaking this command down:
-
-uvicorn — the server
-
-main:app — look in main.py, find the variable called app (the FastAPI instance)
-
---reload — automatically restart the server when you save a file (development only)
-
-The server starts at http://localhost:8000
-
-9. Verify it's running
-Open your browser at:
-
-http://localhost:8000 — should return a JSON welcome message
-
-http://localhost:8000/docs — interactive API documentation (auto-generated by FastAPI)
-
-http://localhost:8000/redoc — alternative docs view
-
-The /docs page is extremely useful. You can test every API endpoint directly from the browser without needing Postman.
-
-Database Migrations (Alembic)
-Think of Alembic like php artisan migrate — it tracks and applies changes to your database schema.
-
-Everyday migration commands
-bash
-# Check current migration version
-alembic current
-
-# Generate a new migration after changing models
-alembic revision --autogenerate -m "description of change"
-
-# Apply all pending migrations
-alembic upgrade head
-
-# Rollback the last migration
-alembic downgrade -1
-
-# Rollback all migrations
-alembic downgrade base
-
-# View migration history
-alembic history
-Typical workflow when changing the database:
-Modify your SQLAlchemy model in app/models.py:
-
-python
-class User(Base):
-    # ... existing columns
-    phone = Column(String(20), nullable=True)  # New column
-Generate a migration:
-
-bash
-alembic revision --autogenerate -m "add phone to users"
-Apply the migration:
-
-bash
-alembic upgrade head
-Commit the migration file to Git:
-
-bash
-git add alembic/versions/
-git commit -m "feat: add phone column to users"
-When you pull a teammate's changes:
-If they added a migration, run:
-```
-bash
-git pull
-alembic upgrade head   # Applies their migration automatically
 ```
 
-Migration files are version controlled
-All migration files live in alembic/versions/ and should be committed to Git. This ensures the entire team has the same database schema history.
+The database is already live and shared — you're applying whatever migrations you don't have yet, not creating anything from scratch.
 
-Folder Structure
-text
+Server runs at `http://localhost:8000`. Check:
+- `http://localhost:8000/docs` — interactive API docs, test any endpoint from the browser
+- `http://localhost:8000/redoc` — alternate docs view
+
+---
+
+## Folder Structure
+
+```
 backend/
-├── alembic/               # Database migration system
-│   ├── versions/          # Individual migration files (commit these!)
-│   ├── env.py             # Alembic configuration (already set up)
-│   └── script.py.mako     # Template for new migrations
+├── alembic/               # Migrations — commit everything in versions/
+│   ├── versions/
+│   ├── env.py
+│   └── script.py.mako
 ├── app/
-│   ├── auth/              # Registration, login, JWT, Google OAuth
-│   │   └── __init__.py
-│   ├── products/          # Product catalogue CRUD
-│   │   └── __init__.py
-│   ├── conversations/     # Conversation logs
-│   │   └── __init__.py
-│   ├── orders/            # Order management
-│   │   └── __init__.py
-│   ├── webhook/           # WhatsApp incoming message handler
-│   │   └── __init__.py
-│   ├── ai/                # AI engine — Claude/Gemini abstraction
-│   │   └── __init__.py
-│   ├── database.py        # Database connection and session setup
-│   ├── models.py          # SQLAlchemy models (User, Product, etc.)
+│   ├── auth/               # Registration, login, JWT, Google OAuth
+│   ├── categories/         # Category CRUD (dashboard)
+│   ├── orders/              # Order tracking (dashboard)
+│   ├── flows/               # marketplace_flow.py — cart/checkout state machine
+│   ├── webhook/             # WhatsApp incoming message handler + Twilio client
+│   ├── ai/                  # AI engine, prompts, Redis cache
+│   ├── scripts/              # One-off setup scripts (Twilio templates, etc.)
+│   ├── database.py
+│   ├── models.py
 │   └── __init__.py
-├── main.py                # FastAPI app entry point — all routers registered here
-├── requirements.txt       # All Python dependencies with pinned versions
-├── alembic.ini            # Alembic configuration (database URL, etc.)
-├── .env                   # Your local secrets — NEVER commit this
-└── .env.example           # Template showing required variables — safe to commit
-Each folder inside app/ is a module — self-contained with its own routes, models, and logic.
-__init__.py files are required by Python to treat folders as importable modules.
-
-Running the Server (Every Time)
-Every time you open a new terminal session:
+├── main.py                 # All routers registered here
+├── requirements.txt
+├── alembic.ini
+├── .env                    # Never commit
+└── .env.example
 ```
-bash
+
+---
+
+## Database — Shared Neon Instance
+
+Everyone points at the same Postgres database. No local Postgres needed for this project — if you have one from earlier, it's no longer used.
+
+### Rules
+
+- **Never call `Base.metadata.create_all()`** — schema changes only happen through Alembic.
+- Every schema change:
+  ```bash
+  alembic revision --autogenerate -m "short description"
+  alembic upgrade head
+  ```
+- **Commit the generated migration file right after**, so everyone else picks it up on their next `git pull` + `alembic upgrade head`. Migration files live in `alembic/versions/` and are version controlled — never edit a migration that's already been applied and shared.
+- If a teammate's changes include a new migration:
+  ```bash
+  git pull
+  alembic upgrade head
+  ```
+
+### Everyday commands
+
+```bash
+alembic current                              # what revision is the DB on
+alembic history                              # full migration chain
+alembic revision --autogenerate -m "..."     # generate a new migration
+alembic upgrade head                         # apply pending migrations
+alembic downgrade -1                         # roll back one step
+```
+
+### Checking data directly
+
+```bash
+psql "$DIRECT_DATABASE_URL" -c "\dt"          # list tables
+psql "$DIRECT_DATABASE_URL" -c "\d orders"    # describe a table
+```
+
+Or use Neon's own console (console.neon.tech) — Tables tab for a spreadsheet view, SQL Editor for queries.
+
+### Common errors
+
+**`no schema has been selected to create in`**
+Alembic is using the pooled `DATABASE_URL` instead of `DIRECT_DATABASE_URL`. Check `alembic/env.py`'s `get_url()` — it should read `DIRECT_DATABASE_URL`.
+
+**`unsupported startup parameter in options: search_path`**
+Same cause, same fix — Alembic needs the direct connection, not the pooler.
+
+**`Can't locate revision identified by '...'`**
+Your local migration files are behind the shared history.
+```bash
+git pull
+alembic current
+alembic history
+```
+Don't run `alembic stamp` to force past this — ask first, it can desync your DB from the real migration state.
+
+**`psql` connects to the wrong database**
+Always quote and use the direct URL explicitly:
+```bash
+psql "$DIRECT_DATABASE_URL" -c "\dt"
+```
+
+---
+
+## Twilio Content Templates
+
+One-time setup script — run it once per Twilio account (e.g. if the project ever moves to a new Twilio account).
+
+**Before running**, open `app/scripts/create_templates.py` and make sure all three lines are uncommented under `__main__`:
+```python
+list_sid = create_list_picker_template()
+quick_reply_sid = create_quick_reply_template()
+browse_more_sid = create_browse_more_template()
+```
+
+Requires `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` in `.env` for the target account.
+
+```bash
+python app/scripts/create_templates.py
+```
+
+**After running**, copy the printed SIDs into `.env`:
+```dotenv
+TWILIO_LIST_PICKER_SID=<from output>
+TWILIO_QUICK_REPLY_SID=<from output>
+TWILIO_BROWSE_MORE_SID=<from output>
+```
+
+Restart `uvicorn` after updating `.env`.
+
+**Verify a template:**
+```bash
+curl -X GET "https://content.twilio.com/v1/Content/<SID>" \
+  -u "<ACCOUNT_SID>:<AUTH_TOKEN>"
+```
+
+---
+
+## Running the Server (every session)
+
+```bash
 cd backend
-source venv\Scripts\activate      # Windows
-
-
-# If anyone added migrations since your last pull
-alembic upgrade head
-```
-
-# Start the server
+source venv/bin/activate
+alembic upgrade head        # pick up any new migrations
 uvicorn main:app --reload
-Two terminals will be running simultaneously during development:
-
-One for the backend (uvicorn main:app --reload) at port 8000
-
-One for the frontend (npm run dev) at port 5173
-
-If a Teammate Adds a New Python Package
-After pulling their changes, always run:
-
 ```
-bash
-pip install -r requirements.txt
-And if YOU add a new package, update the file so your teammate gets it too:
 
-```
-bash
+Two terminals run side by side in development: backend (`uvicorn`, port 8000) and frontend (`npm run dev`, port 5173).
+
+---
+
+## Adding a New Python Package
+
+```bash
 pip install package-name
 pip freeze > requirements.txt
 git add requirements.txt
 git commit -m "chore: add package-name dependency"
-Branch & PR Workflow
-Same as frontend — this applies to the whole project:
+```
 
-text
-1. Work on your branch        →  git add . && git commit -m "feat: ..."
-2. Push your branch           →  git push origin yourname/feature-name
-3. Open a PR on GitHub        →  base: dev ← compare: yourname/feature-name
+After pulling a teammate's changes that touch `requirements.txt`:
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Branch & PR Workflow
+
+```
+1. Work on your branch   → git add . && git commit -m "feat: ..."
+2. Push your branch      → git push origin yourname/feature-name
+3. Open a PR             → base: dev ← compare: yourname/feature-name
 4. Teammate reviews and approves
 5. Merge into dev
-6. Pull dev locally           →  git checkout dev && git pull origin dev
-7. Run migrations if any      →  alembic upgrade head
-8. Branch off dev again for next feature
-Commit message format:
+6. Pull dev locally      → git checkout dev && git pull origin dev
+7. Run migrations if any → alembic upgrade head
+8. Branch off dev again for the next feature
+```
 
-text
+Commit message format:
+```
 feat: add auth registration endpoint
 fix: correct JWT expiry bug
 chore: update requirements.txt
 refactor: move AI logic to dedicated module
-docs: update README with database setup steps
-Database (PostgreSQL)
-Setup
-Create a PostgreSQL database (local or cloud like Supabase/Neon)
-
-Add your connection string to .env:
-
-text
-DATABASE_URL=postgresql://username:password@localhost:5432/aisha_db
-Run initial migration:
-
+docs: update README
 ```
-bash
-alembic upgrade head
-Useful database commands
-bash
-# Check current schema version
-alembic current
 
-# Generate new migration after model changes
-alembic revision --autogenerate -m "description"
+---
 
-# Apply migrations
-alembic upgrade head
-AI Provider Strategy
-The AI engine is designed to be swappable with one config change.
-During development → use Gemini (free, no credit card needed).
-During demos → switch to Claude (better quality).
+## AI Provider Strategy
 
-This is handled inside app/ai/ — details added in Week 4.
-
-Current Status (Week 1 — Scaffolding)
-FastAPI project initialized
-
-Virtual environment created
-
-All dependencies installed and pinned in requirements.txt
-
-Folder structure and module placeholders created
-
-.env and .env.example configured
-
-Alembic initialized for database migrations
-
-SQLAlchemy models created (User, Product, Customer, Conversation, Order)
-
-Initial database migration generated and applied
+The AI engine is swappable via config. Gemini during development (free tier), Claude for demos (better quality). Configured in `app/ai/`.

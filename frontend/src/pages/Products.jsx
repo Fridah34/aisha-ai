@@ -551,7 +551,10 @@ function ProductForm({
                 </label>
                 <select
                   value={form.category_id}
-                  onChange={e => setForm({ ...form, category_id: e.target.value })}
+                  onChange={e =>{
+                    console.log('Category selected:', e.target.value) 
+                    setForm({ ...form, category_id: e.target.value })
+                  }}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200
                              text-sm text-slate-700
                              focus:outline-none focus:ring-2 focus:ring-amber-400
@@ -830,6 +833,7 @@ export default function Products() {
   // ── Save ─────────────────────────────────────────────────────────────────────
 
   async function handleSave() {
+    console.log('form.category_id at save time:', form.category_id) 
     if (!form.name.trim()) {
       setFormError('Product name is required.')
       return
@@ -849,7 +853,7 @@ export default function Products() {
         description:     form.description.trim()     || null,
         price:           priceNum,
         is_available:    form.is_available,
-        category_id:     form.category_id ? Number(form.category_id) : null,
+        category_id:     form.category_id || null,
         variant_label:   form.variant_label.trim()   || null,
         variant_options: form.variant_options.trim() || null,
         unit:            form.unit.trim()            || null,
@@ -946,7 +950,7 @@ export default function Products() {
       filterStatus === 'available' ? p.is_available :
       !p.is_available
     const matchCat =
-      filterCategory === 'all' || p.category_id === Number(filterCategory)
+      filterCategory === 'all' || p.category_id === filterCategory
     return matchSearch && matchStatus && matchCat
   })
 

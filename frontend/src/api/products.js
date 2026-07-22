@@ -1,4 +1,12 @@
+<<<<<<< HEAD
 import { apiFetch } from './client'
+=======
+import { apiFetch, getCurrentBusinessId, formatApiError } from './client'
+
+function businessQuery() {
+  return `business_id=${encodeURIComponent(getCurrentBusinessId())}`
+}
+>>>>>>> origin/Fridah
 
 export const getProducts = () =>
   apiFetch('/products')
@@ -35,7 +43,7 @@ export async function uploadProductImage(productId, file) {
   )
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
-    throw new Error(err.detail || `HTTP ${res.status}`)
+    throw new Error(formatApiError(err))
   }
   return res.json()
 }
