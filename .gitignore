@@ -1,0 +1,47 @@
+# ====================================================================
+# AISHA-AI GLOBAL ROOT GITIGNORE
+# ====================================================================
+
+# 1. Environment Configurations (Frontend & Backend Secrets)
+.env
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+.env
+.env.local
+*.env
+
+.env.development.local
+.env.production.local
+
+# 2. Frontend Dependencies & Build Output
+node_modules/
+/frontend/node_modules/
+/frontend/dist/
+/frontend/build/
+npm-debug.log*
+
+# 3. Python Backend Dependencies & Caches
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 4. Databases (Keep local runtime data out of GitHub)
+*.db
+*.sqlite3
+
+# 5. OS Specific Files
+.DS_Store
+Thumbs.db
+
+.history

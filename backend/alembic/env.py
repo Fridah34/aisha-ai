@@ -1,20 +1,19 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
-import sys
-from pathlib import Path
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+import sys
+from logging.config import fileConfig
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from app.database import Base
-from app import models
+from alembic import context
+from app.models import Base
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
+
+load_dotenv()
 
 target_metadata = Base.metadata
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -34,7 +33,7 @@ if config.config_file_name is not None:
 
 def get_url():
     # Get database URL from environment variable
-    return os.getenv("DATABASE_URL", "postgresql://user:password@localhost/aisha_db")
+    return os.getenv("DIRECT_DATABASE_URL", "postgresql://EVE.0798080246@localhost/aisha_db")
 
 
 def run_migrations_offline() -> None:
@@ -62,7 +61,6 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-
     configuration = config.get_section(config.config_ini_section)
     configuration["sqlalchemy.url"] = get_url()
     """Run migrations in 'online' mode.
@@ -78,10 +76,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
