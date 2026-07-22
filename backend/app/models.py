@@ -36,27 +36,26 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 # ENUMS
 # ==============================================================================
 class OrderStatus(enum.Enum):
-    PENDING = "PENDING"
-    PAID = "PAID"
-    SHIPPED = "SHIPPED"
-    DELIVERED = "DELIVERED"
-    CANCELLED = "CANCELLED"
+    PENDING = "pending"
+    PAID = "paid"
+    SHIPPING = "shipping"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
 
 
 class MessageRole(enum.Enum):
     """Who authored a given `Conversation` or `ChatMessage` log."""
 
-    USER = "USER"
-    ASSISTANT = "ASSISTANT"
-    HUMAN = "HUMAN"
+    Customer = "Customer"
+    Assistant = "Assistant"
+    Human = "Human"
 
 
 class Language(enum.Enum):
-    """Supported conversation languages. EN = English, SW = Swahili, SNG = Sheng."""
+    """Supported conversation languages. en = English, sw = Swahili"""
 
-    EN = "EN"
-    SW = "SW"
-    SNG = "SNG"
+    en = "en"
+    sw = "sw"
 
 
 class HandoverStatus(enum.Enum):
@@ -315,7 +314,7 @@ class Conversation(Base):
     role: Mapped[MessageRole] = mapped_column(EnumSQL(MessageRole), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     language: Mapped[Language] = mapped_column(
-        EnumSQL(Language), default=Language.EN, nullable=False
+        EnumSQL(Language), default=Language.en, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

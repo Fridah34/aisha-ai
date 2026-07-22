@@ -37,7 +37,11 @@ function formatTimestamp(iso) {
 // something an owner will do dozens of times a day.
 
 function StatusSelect({ status, onChange, disabled }) {
-  const meta = STATUS_META[status]
+  const meta = STATUS_META[status] ?? {
+    label: status || 'Unknown',
+    badge: 'bg-slate-100 text-slate-500',
+    dot: 'bg-slate-400',
+  }
   return (
     <select
       value={status}

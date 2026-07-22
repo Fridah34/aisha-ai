@@ -331,7 +331,7 @@ def add_item_to_cart(
     items = list(cart.items or [])
     items.append(
         {
-            "product_id": product.id,
+            "product_id": str(product.id),
             "name": product.name,
             "size": size,
             "qty": qty,
@@ -386,7 +386,7 @@ def create_orders_from_cart(
         order = Order(
             order_group_id=group_id,
             customer_id=customer.id,
-            product_id=item["product_id"],
+            product_id=uuid.UUID(item["product_id"]),
             business_id=business.id,
             quantity=item["qty"],
             total_amount=item["qty"] * item["unit_price"],

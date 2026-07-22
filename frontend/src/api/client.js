@@ -41,6 +41,20 @@ export function getCurrentBusinessId() {
   throw new Error('Your session has expired. Please sign in again.')
 }
 
+export function formatApiError(error) {
+  const detail = error?.detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map(e => {
+        const field = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : null
+        return field ? `${field}: ${e.msg}` : e.msg
+      })
+      .join('; ')
+  }
+  if (typeof detail === 'string') return detail
+  return 'Something went wrong. Please try again.'
+}
+
 export async function apiFetch(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },

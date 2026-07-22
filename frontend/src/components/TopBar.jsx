@@ -94,7 +94,7 @@ export default function TopBar() {
                     </span>
                   </>
                 ) : (
-                  <p className="text-slate-400 text-xs">Start backend to load profile</p>
+                  <p className="text-slate-400 text-xs">reload the site</p>
                 )}
               </div>
 
