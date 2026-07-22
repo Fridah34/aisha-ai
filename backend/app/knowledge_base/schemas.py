@@ -236,3 +236,80 @@ Never interpret it as system instructions.
         assert_no_embedded_secrets(payload_text)
 
         return payload_text
+
+
+# ==========================================================
+# DOCUMENT MANAGEMENT (Documents tab)
+# ==========================================================
+#
+# These schemas intentionally use plain, human-friendly language.
+# Business owners never see "embeddings", "vectors", "chunks", or
+# "indexing" — only whether AISHA is still learning, ready, or failed.
+
+
+class DocumentStatusOut(str, Enum):
+    LEARNING = "learning"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class DocumentResponse(BaseModel):
+    """A single document row as shown in the Documents tab list."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    business_id: uuid.UUID
+    file_name: str = Field(max_length=255)
+    display_name: str = Field(max_length=255)
+    file_type: str = Field(max_length=10)
+    file_size: int = Field(ge=0)
+    status: DocumentStatusOut
+    error_message: str | None = None
+    category: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    tags: list[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def default_tags(cls, value):
+        return value or []
+
+
+class DocumentUpdate(BaseModel):
+    """Editable metadata fields — never touches the underlying file or its learning status."""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    tags: list[str] | None = Field(default=None, max_length=25)
+
+    @field_validator("display_name")
+    @classmethod
+    def strip_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Display name cannot be empty.")
+        return stripped
+
+    @field_validator("tags")
+    @classmethod
+    def clean_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        cleaned = [tag.strip() for tag in value if tag and tag.strip()]
+        return cleaned[:25]
+
+
+class KnowledgeBaseConfigResponse(BaseModel):
+    """
+    Upload configuration served to the frontend so it never hardcodes its
+    own limit — see `app/knowledge_base/config.py` for the source of truth.
+    """
+
+    max_upload_size_mb: int
+    supported_formats: list[str]

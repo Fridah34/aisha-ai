@@ -1,18 +1,14 @@
-import { apiFetch, getCurrentBusinessId } from './client'
-
-function businessQuery() {
-  return `business_id=${encodeURIComponent(getCurrentBusinessId())}`
-}
+import { apiFetch } from './client'
 
 export const getInbox = () =>
-   apiFetch(`/conversations?${businessQuery()}`)
+   apiFetch('/conversations')
 export const getThread = (customerId) =>
-   apiFetch(`/conversations/${customerId}?${businessQuery()}`)
+   apiFetch(`/conversations/${customerId}`)
 export const takeOver = (customerId)   =>
-  apiFetch(`/conversations/${customerId}/takeover?${businessQuery()}`, { method: 'PATCH' })
-export const resolve = (customerId)   => apiFetch(`/conversations/${customerId}/resolve?${businessQuery()}`, { method: 'PATCH' })
+  apiFetch(`/conversations/${customerId}/takeover`, { method: 'PATCH' })
+export const resolve = (customerId)   => apiFetch(`/conversations/${customerId}/resolve`, { method: 'PATCH' })
 export const sendReply   = (customerId, message) =>
-  apiFetch(`/conversations/${customerId}/reply?${businessQuery()}`, {
+  apiFetch(`/conversations/${customerId}/reply`, {
     method: 'POST',
     body: JSON.stringify({ message }),
   })
