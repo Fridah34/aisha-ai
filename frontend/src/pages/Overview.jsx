@@ -268,7 +268,7 @@ export default function Overview() {
                   {/* Product image thumbnail if available */}
                   {p.image_url ? (
                     <img
-                      src={`http://127.0.0.1:8000${p.image_url}`}
+                      src={`http://localhost:8000${p.image_url}`}
                       alt={p.name}
                       className="w-8 h-8 rounded-lg object-cover shrink-0"
                     />

@@ -6,14 +6,14 @@ These two fields directly control how AISHA behaves:
 - knowledge_base_text: injected into every prompt as business context
 - business_type: selects the action flow (retail / services / general)
 
-AUTH NOTE: business_id passed explicitly for now.
-Replace with Depends(get_current_user) when Eve's JWT auth is ready.
+AUTH: business_id comes from the authenticated session (get_current_user), never from the client.
 """
 
 import uuid
 from typing import Optional
 
 from app.ai.cache import invalidate_business_cache
+from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models import User
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,9 +39,12 @@ class SettingsResponse(BaseModel):
 
 
 @router.get("", response_model=SettingsResponse)
-def get_settings(business_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_settings(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Returns current settings for the business."""
-    user = db.query(User).filter(User.id == business_id).first()
+    user = db.query(User).filter(User.id == current_user.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Business not found")
     return user
@@ -49,7 +52,9 @@ def get_settings(business_id: uuid.UUID, db: Session = Depends(get_db)):
 
 @router.patch("", response_model=SettingsResponse)
 def update_settings(
-    business_id: uuid.UUID, updates: SettingsUpdate, db: Session = Depends(get_db)
+    updates: SettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Updates knowledge base and/or business type.
@@ -59,7 +64,7 @@ def update_settings(
     PATCH not PUT — only the fields sent are updated,
     everything else is left untouched.
     """
-    user = db.query(User).filter(User.id == business_id).first()
+    user = db.query(User).filter(User.id == current_user.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Business not found")
 
@@ -78,6 +83,6 @@ def update_settings(
     db.refresh(user)
 
     # Invalidate cache — AISHA rebuilds prompt on next message
-    invalidate_business_cache(business_id)
+    invalidate_business_cache(current_user.id)
 
     return user
