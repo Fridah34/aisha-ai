@@ -223,3 +223,50 @@ def append_to_conversation_cache(
         cache_conversation(customer_id, business_id, existing, ttl_seconds)
     except Exception as e:
         print(f"Redis append error: {e}")
+
+
+# ─── ACTIVE BUSINESS SESSION ───────────────────────────────────────────────
+# Tracks which business a customer is currently "inside" once they've picked
+# one from the list picker, so the open-ended AI branch always answers using
+# the store the customer actually selected — not just any active business.
+# TTL = 24 hours, same as the conversation cache, so a customer who goes
+# quiet reopens the marketplace menu instead of silently staying scoped.
+
+
+def get_active_business(customer_phone: str):
+    """
+    Returns the business_id (str) the customer last selected, or None
+    if not cached — caller falls back to MarketplaceSession.selected_business_id.
+    """
+    if not REDIS_AVAILABLE:
+        return None
+    try:
+        key = f"active_biz:{customer_phone}"
+        return redis_client.get(key)
+    except Exception as e:
+        print(f"Redis active business read error: {e}")
+        return None
+
+
+def set_active_business(
+    customer_phone: str, business_id: uuid.UUID, ttl_seconds: int = 86400
+) -> None:
+    """Stores the customer's active business selection in Redis for 24 hours."""
+    if not REDIS_AVAILABLE:
+        return
+    try:
+        key = f"active_biz:{customer_phone}"
+        redis_client.setex(key, ttl_seconds, str(business_id))
+    except Exception as e:
+        print(f"Redis active business write error: {e}")
+
+
+def clear_active_business(customer_phone: str) -> None:
+    """Clears the customer's active business selection (e.g. on 'menu'/switch)."""
+    if not REDIS_AVAILABLE:
+        return
+    try:
+        key = f"active_biz:{customer_phone}"
+        redis_client.delete(key)
+    except Exception as e:
+        print(f"Redis active business delete error: {e}")

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import AsyncGenerator, Generator
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 # Import centralized application settings
 from app.config import settings
@@ -21,17 +22,43 @@ logging.basicConfig(
     level=logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-
 # ==============================================================================
 # CONNECTION PATH CONFIGURATION
 # ==============================================================================
-if "postgresql+asyncpg://" not in settings.RAW_DATABASE_URL:
-    ASYNC_DATABASE_URL = settings.RAW_DATABASE_URL.replace(
-        "postgresql://", "postgresql+asyncpg://"
-    )
-else:
-    ASYNC_DATABASE_URL = settings.RAW_DATABASE_URL
+raw_url = settings.RAW_DATABASE_URL
 
+# 1. Standardize protocol for asyncpg
+if raw_url.startswith("postgres://"):
+    raw_url = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif raw_url.startswith("postgresql://") and not raw_url.startswith("postgresql+asyncpg://"):
+    raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# 2. Strip libpq-specific query parameters that cause asyncpg TypeErrors
+parsed = urlparse(raw_url)
+query_params = parse_qs(parsed.query)
+
+# Remove all libpq parameters asyncpg doesn't support
+FORBIDDEN_PARAMS = [
+    "sslmode",
+    "ssl",
+    "channel_binding",
+    "gssencmode",
+    "target_session_attrs",
+]
+for param in FORBIDDEN_PARAMS:
+    query_params.pop(param, None)
+
+cleaned_query = urlencode(query_params, doseq=True)
+ASYNC_DATABASE_URL = urlunparse((
+    parsed.scheme,
+    parsed.netloc,
+    parsed.path,
+    parsed.params,
+    cleaned_query,
+    parsed.fragment,
+))
+
+# Clean URL for synchronous SQLAlchemy engine
 SYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
 
@@ -56,7 +83,11 @@ def create_database_if_not_exists() -> None:
             raise ValueError(f"Invalid database name format detected: {db_name}")
 
         default_system_url = f"{default_url}/postgres"
-        default_engine = create_engine(default_system_url, isolation_level="AUTOCOMMIT")
+        default_engine = create_engine(
+            default_system_url,
+            connect_args={"sslmode": "require"},  # Added for Neon DB SSL requirement
+            isolation_level="AUTOCOMMIT",
+        )
 
         with default_engine.connect() as conn:
             result = conn.execute(
@@ -87,10 +118,14 @@ create_database_if_not_exists()
 # ==============================================================================
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
+    connect_args={
+        "ssl": "require",                    # <--- Explicit SSL requirement for Neon
+        "prepared_statement_cache_size": 0,  # <--- Prevents PgBouncer pooler errors
+    },
     pool_pre_ping=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_recycle=settings.DB_POOL_RECYCLE,  # Prevents connections from dying silently
+    pool_recycle=settings.DB_POOL_RECYCLE,
 )
 
 async_session_factory = async_sessionmaker(
@@ -102,6 +137,7 @@ async_session_factory = async_sessionmaker(
 # ==============================================================================
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
+    connect_args={"sslmode": "require"},  # <--- Enforces SSL for sync connections
     pool_pre_ping=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,

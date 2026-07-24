@@ -59,10 +59,9 @@ def add_product(
     without this, AISHA would keep telling customers about the
     old product list for up to an hour (the cache TTL).
     """
-    # Ignore any business_id the client sent — always attribute the new
-    # product to the authenticated caller, never a client-supplied value.
-    product_data.business_id = current_user.id
-    new_product = crud.create_product(db, product_data)
+    # business_id is never part of ProductCreate — it's injected here from
+    # the authenticated caller, not read from the client payload.
+    new_product = crud.create_product(db, product_data, current_user.id)
     invalidate_business_cache(current_user.id)
     return new_product
 

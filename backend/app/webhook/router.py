@@ -9,20 +9,43 @@ from sqlalchemy.orm import Session
 
 load_dotenv(find_dotenv())
 
-from app.ai.cache import already_sent_image, mark_image_sent  # noqa : E402
-from app.ai.service import normalize_phone, process_customer_message , save_message, detect_language # noqa: E402
-from app.database import get_db  # noqa: E402
-from app.models import Customer,Product, User  # noqa: E402
-from app.webhook.client import send_text_message, send_list_picker, send_browse_more_prompt   # noqa: E402
-from app.webhook.parser import extract_message_data  # noqa: E402
-from app.flows.marketplace_flow import (  # noqa: E402
-    get_or_create_marketplace_session, handle_marketplace_step, is_switch_command,
-    is_checkout_command, reset_to_menu, get_products_for_business_category,
-    resolve_product_choice, get_or_create_cart, resolve_size_choice,
-    parse_quantity, add_item_to_cart, format_cart_summary,
-    parse_name_and_contact, create_orders_from_cart,
+from app.ai.cache import (  # noqa : E402
+    already_sent_image,
+    clear_active_business,
+    get_active_business,
+    mark_image_sent,
+    set_active_business,
 )
-
+from app.ai.service import (  # noqa: E402
+    detect_language,
+    normalize_phone,
+    process_customer_message,
+    save_message,
+)
+from app.database import get_db  # noqa: E402
+from app.flows.marketplace_flow import (  # noqa: E402
+    add_item_to_cart,
+    create_orders_from_cart,
+    format_cart_summary,
+    get_or_create_cart,
+    get_or_create_marketplace_session,
+    get_products_for_business_category,
+    handle_marketplace_step,
+    is_checkout_command,
+    is_switch_command,
+    parse_name_and_contact,
+    parse_quantity,
+    reset_to_menu,
+    resolve_product_choice,
+    resolve_size_choice,
+)
+from app.models import Customer, Product, User  # noqa: E402
+from app.webhook.client import (  # noqa: E402
+    send_browse_more_prompt,
+    send_list_picker,
+    send_text_message,
+)
+from app.webhook.parser import extract_message_data  # noqa: E402
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -201,6 +224,7 @@ async def receive_message(
 
         if is_switch_command(message_text):
             reset_to_menu(marketplace_session, db)
+            clear_active_business(customer_phone)
             reply_text, reply_items = handle_marketplace_step(marketplace_session, message_text, db)
             _send_marketplace_reply(customer_phone, reply_text, reply_items)
             return Response(status_code=200)
@@ -210,6 +234,7 @@ async def receive_message(
 
             just_entered_store = marketplace_session.selected_business_id is not None
             if just_entered_store:
+                set_active_business(customer_phone, marketplace_session.selected_business_id)
                 customer = _get_or_create_customer_for_business(
                     customer_phone, marketplace_session.selected_business_id, db, profile_name=profile_name
                 )
@@ -232,17 +257,39 @@ async def receive_message(
             return Response(status_code=200)
 
         # ── Multi-tenancy lookup ──────────────────────────────────────
-        # Sandbox: one shared Twilio number, so we use the first active business.
-        # Production: each business gets their own Twilio number.
-        # When that happens, look up by data["twilio_number"] instead.
-        business = db.query(User).filter(User.is_active).first()
+        # The customer already picked a specific store via the list picker
+        # (marketplace_session.selected_business_id, mirrored in Redis as
+        # active_biz:{phone} for fast lookup). Every reply — including the
+        # open-ended AI branch below — must use THAT business, never just
+        # any active business, or a customer inside store B could get
+        # answers built from store A's products/knowledge base.
+        cached_business_id = get_active_business(customer_phone)
+        active_business_id = marketplace_session.selected_business_id
+        if cached_business_id:
+            try:
+                active_business_id = uuid.UUID(cached_business_id)
+            except (ValueError, AttributeError, TypeError):
+                print(f"[Webhook] Malformed active_biz cache value: {cached_business_id!r}")
+
+        business = None
+        if active_business_id:
+            business = (
+                db.query(User)
+                .filter(User.id == active_business_id, User.is_active)
+                .first()
+            )
 
         if not business:
             marketplace_session.selected_business_id = None
             marketplace_session.pending_action = None
             db.commit()
+            clear_active_business(customer_phone)
             send_text_message(to_phone=customer_phone, message="That store isn't available anymore. Let's find you another!")
             return Response(status_code=200)
+
+        # Keep Redis in sync with the session's source of truth (covers the
+        # case where selected_business_id was set before this cache existed).
+        set_active_business(customer_phone, business.id)
 
         # From here on the customer is inside a specific store, so every
         # exchange has a real business to attribute it to — get/create the

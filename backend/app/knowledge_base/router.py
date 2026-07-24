@@ -4,6 +4,7 @@ import io
 import uuid
 from pathlib import Path
 
+from app.ai.cache import invalidate_business_cache
 from app.auth.dependencies import get_current_user
 from app.database import get_session
 from app.knowledge_base.config import (
@@ -12,7 +13,7 @@ from app.knowledge_base.config import (
     validate_upload,
 )
 from app.knowledge_base.manager import IngestionRejectedError, KnowledgeBaseManager
-from app.knowledge_base.models import DocumentStatus, KnowledgeDocument
+from app.knowledge_base.models import DocumentStatus, KnowledgeDocument, WikiChunk
 from app.knowledge_base.schemas import (
     DocumentResponse,
     DocumentUpdate,
@@ -87,6 +88,36 @@ async def _get_document_or_404(
     return document
 
 
+async def _sync_business_knowledge_text(
+    session: AsyncSession, business_id: uuid.UUID
+) -> None:
+    """
+    Rebuilds `User.knowledge_base_text` from every learned `WikiChunk` for
+    this business, so uploads/replaces/retries/deletes are reflected in the
+    AI prompt (see app.ai.service.get_business_prompt) immediately, without
+    a business owner having to paste text into Settings manually.
+
+    Aggregates ALL documents' chunks (not just the one just touched) so a
+    business with multiple files keeps all of its learned knowledge.
+    """
+    rows = await session.scalars(
+        select(WikiChunk)
+        .where(WikiChunk.business_id == business_id)
+        .order_by(WikiChunk.source_file, WikiChunk.section_path)
+    )
+    knowledge_base_text = "\n\n".join(row.chunk_text for row in rows.all()) or None
+
+    user = await session.get(User, business_id)
+    if user is None:
+        return
+    user.knowledge_base_text = knowledge_base_text
+    session.add(user)
+
+    # Rebuild on next customer message instead of serving a stale prompt
+    # for up to an hour.
+    invalidate_business_cache(business_id)
+
+
 async def _learn_document(
     manager: KnowledgeBaseManager,
     document: KnowledgeDocument,
@@ -138,6 +169,8 @@ async def _learn_document(
 
     document.status = DocumentStatus.READY
     document.error_message = None
+
+    await _sync_business_knowledge_text(manager.session, business_id)
 
 
 @router.get("/config", response_model=KnowledgeBaseConfigResponse)
@@ -388,8 +421,6 @@ async def delete_document(
     await manager.set_tenant_context(session, business_id)
     document = await _get_document_or_404(session, business_id, document_id)
 
-    from app.knowledge_base.models import WikiChunk
-
     chunks = await session.scalars(
         select(WikiChunk).where(
             WikiChunk.business_id == business_id,
@@ -411,6 +442,8 @@ async def delete_document(
         pass
 
     await session.delete(document)
+    await session.flush()
+    await _sync_business_knowledge_text(session, business_id)
     await session.commit()
 
     return {"message": "Document deleted successfully."}

@@ -14,7 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProductCreate(BaseModel):
-    business_id: uuid.UUID
+    # business_id is deliberately NOT part of this schema — it's never
+    # sent by the client. The router injects it from the authenticated
+    # user before the product is persisted (see products/router.py).
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     price: Decimal = Field(..., gt=0)
