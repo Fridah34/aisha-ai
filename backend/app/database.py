@@ -61,6 +61,29 @@ ASYNC_DATABASE_URL = urlunparse((
 # Clean URL for synchronous SQLAlchemy engine
 SYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
+# ==============================================================================
+# SMART SSL DETECTION (Neon DB vs Local/CI Postgres)
+# ==============================================================================
+parsed_db = urlparse(SYNC_DATABASE_URL)
+
+# Detect if running in local development, CI runner, or docker network vs production Neon DB
+is_local_db = (
+    parsed_db.hostname in {"localhost", "127.0.0.1", "postgres", "db", None}
+    or settings.ENVIRONMENT in {"development", "test"}
+)
+
+sync_connect_args = {}
+async_connect_args = {"prepared_statement_cache_size": 0}
+
+if not is_local_db:
+    # Enforce strict SSL in remote production environments (e.g. Neon DB, AWS RDS)
+    sync_connect_args["sslmode"] = "require"
+    async_connect_args["ssl"] = "require"
+else:
+    # Allow non-SSL / fallback for local dev & GitHub Actions CI runners
+    sync_connect_args["sslmode"] = "prefer"
+    async_connect_args["ssl"] = "prefer"
+
 
 # ==============================================================================
 # SELF-HEALING DATABASE INITIALIZATION (DEVELOPMENT ONLY)
@@ -153,7 +176,7 @@ engine = sync_engine
 class Base(DeclarativeBase):
     """Modern DeclarativeBase subclass mapping python models to database tables cleanly."""
 
-    pass
+
 
 
 # ==============================================================================
