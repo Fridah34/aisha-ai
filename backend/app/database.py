@@ -69,7 +69,7 @@ parsed_db = urlparse(SYNC_DATABASE_URL)
 # Detect if running in local development, CI runner, or docker network vs production Neon DB
 is_local_db = (
     parsed_db.hostname in {"localhost", "127.0.0.1", "postgres", "db", None}
-    or settings.ENVIRONMENT in {"development", "test"}
+    
 )
 
 sync_connect_args = {}
@@ -81,8 +81,8 @@ if not is_local_db:
     async_connect_args["ssl"] = "require"
 else:
     # Allow non-SSL / fallback for local dev & GitHub Actions CI runners
-    sync_connect_args["sslmode"] = "prefer"
-    async_connect_args["ssl"] = "prefer"
+    sync_connect_args["sslmode"] = "disable"
+
 
 
 # ==============================================================================
@@ -108,7 +108,7 @@ def create_database_if_not_exists() -> None:
         default_system_url = f"{default_url}/postgres"
         default_engine = create_engine(
             default_system_url,
-            connect_args={"sslmode": "require"},  # Added for Neon DB SSL requirement
+            connect_args=sync_connect_args,  # Added for Neon DB SSL requirement
             isolation_level="AUTOCOMMIT",
         )
 
@@ -141,10 +141,7 @@ create_database_if_not_exists()
 # ==============================================================================
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    connect_args={
-        "ssl": "require",                    # <--- Explicit SSL requirement for Neon
-        "prepared_statement_cache_size": 0,  # <--- Prevents PgBouncer pooler errors
-    },
+    connect_args=async_connect_args,
     pool_pre_ping=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
@@ -160,7 +157,7 @@ async_session_factory = async_sessionmaker(
 # ==============================================================================
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
-    connect_args={"sslmode": "require"},  # <--- Enforces SSL for sync connections
+    connect_args=sync_connect_args,  # <--- Enforces SSL for sync connections
     pool_pre_ping=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
@@ -175,8 +172,7 @@ engine = sync_engine
 
 class Base(DeclarativeBase):
     """Modern DeclarativeBase subclass mapping python models to database tables cleanly."""
-
-
+    pass
 
 
 # ==============================================================================
