@@ -25,9 +25,9 @@ from app.ai.service import (  # noqa: E402
     save_message,
 )
 
-from app.models import Customer, Product, User
-from app.webhook.client import send_browse_more_prompt, send_list_picker, send_text_message
-from app.webhook.parser import extract_message_data
+from app.models import Customer, Product, User  # noqa: E402
+from app.webhook.client import send_browse_more_prompt, send_list_picker, send_text_message # noqa: E402
+from app.webhook.parser import extract_message_data  # noqa: E402
 from app.database import get_db  # noqa: E402
 from app.flows.marketplace_flow import (  # noqa: E402
     add_item_to_cart,create_orders_from_cart,extract_order_ref,format_cart_summary,
@@ -553,10 +553,11 @@ async def receive_message(
                 "_Each item is tracked separately, so status may update at different times._"
             )
             
-            t_before_save = time.time()
+            t_before_save= time.time()
             save_message(customer_id=customer.id, business_id=business.id, role="assistant",
                          content=confirmation_text, language=language, db=db)
             t_after_save = time.time()
+            print(f"[TIMING] save_message (confirmation): {t_after_save - t_before_save:.2f}s")
 
             cart.items = []
             # Full reset (not just clearing pending_action) — without
