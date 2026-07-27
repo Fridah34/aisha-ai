@@ -892,7 +892,13 @@ export default function Products() {
       loadProducts()
       goToList()
     } catch (e) {
-      setFormError(e.message || 'Failed to save product.')
+      let message = 'Failed to save product.'
+      if (Array.isArray(e.detail)) {
+        message = e.detail.map(d => d.msg).join(', ')
+      } else if (typeof e.message === 'string') {
+        message = e.message
+      }
+      setFormError(message)
     } finally {
       setSaving(false)
     }

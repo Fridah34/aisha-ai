@@ -82,6 +82,23 @@ def upgrade() -> None:
         "ix_knowledge_documents_created_at", "knowledge_documents", ["created_at"]
     )
 
+    # update_updated_at_column() isn't defined anywhere earlier in this
+    # migration chain (it was likely created manually, outside Alembic, on
+    # whichever database this migration was originally authored against).
+    # CREATE OR REPLACE makes this safe to run even if the function is
+    # later added properly elsewhere — no duplicate-definition error.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_updated_at_column()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = now();
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+
     op.execute(
         """
         CREATE TRIGGER update_knowledge_documents_updated_at
@@ -109,7 +126,13 @@ def downgrade() -> None:
     op.execute(
         "DROP TRIGGER IF EXISTS update_knowledge_documents_updated_at ON knowledge_documents;"
     )
+    # Only drop the function if nothing else in the schema depends on it —
+    # since this migration is what created it, it's the migration
+    # responsible for cleaning it up on rollback.
+    op.execute("DROP FUNCTION IF EXISTS update_updated_at_column();")
     op.drop_index("ix_knowledge_documents_created_at", table_name="knowledge_documents")
     op.drop_index("ix_knowledge_documents_business_id", table_name="knowledge_documents")
     op.drop_table("knowledge_documents")
     document_status_enum.drop(op.get_bind(), checkfirst=True)
+    
+    
