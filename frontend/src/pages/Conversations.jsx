@@ -496,8 +496,8 @@ export default function Conversations() {
                       {group.messages.map((msg) => {
 
                         // Handover system event — centred pill
-                        if (msg.message_text === HANDOVER_PHRASE ||
-                            msg.message_text?.includes(HANDOVER_PHRASE)) {
+                        if (msg.content === HANDOVER_PHRASE ||
+                            msg.content?.includes(HANDOVER_PHRASE)) {
                           return (
                             <div key={msg.id} className="flex justify-center my-4">
                               <span className="flex items-center gap-1.5 text-xs
@@ -511,17 +511,17 @@ export default function Conversations() {
                         }
 
                         // Customer message — left aligned, white bubble
-                        if (msg.sender === 'customer') {
+                        if (msg.role === 'Customer') {
                           return (
                             <div key={msg.id} className="flex justify-start">
                               <div className="max-w-[68%]">
                                 <div className="bg-white border border-slate-200 text-slate-700
                                                 px-4 py-2.5 rounded-2xl rounded-tl-sm
                                                 text-sm leading-relaxed">
-                                  {msg.message_text}
+                                  {msg.content}
                                 </div>
                                 <p className="text-[10px] text-slate-400 mt-1 ml-1">
-                                  {formatTime(msg.timestamp)}
+                                  {formatTime(msg.created_at)}
                                   {msg.language !== 'en' && (
                                     <span className="ml-1.5 uppercase font-medium text-slate-500">
                                       {msg.language}
@@ -534,18 +534,18 @@ export default function Conversations() {
                         }
 
                         // AISHA reply — right aligned, amber bubble
-                        if (msg.sender === 'assistant') {
+                        if (msg.role === 'Assistant') {
                           return (
                             <div key={msg.id} className="flex justify-end">
                               <div className="max-w-[68%]">
                                 <div className="bg-amber-500 text-white px-4 py-2.5
                                                 rounded-2xl rounded-tr-sm text-sm leading-relaxed">
-                                  {msg.message_text}
+                                  {msg.content}
                                 </div>
                                 <div className="flex items-center justify-end gap-1 mt-1 mr-1">
                                   <Bot size={9} className="text-amber-400" />
                                   <p className="text-[10px] text-slate-400">
-                                    AISHA · {formatTime(msg.timestamp)}
+                                    AISHA · {formatTime(msg.created_at)}
                                   </p>
                                 </div>
                               </div>
@@ -555,7 +555,7 @@ export default function Conversations() {
 
                         // Human (owner) reply — right aligned, slate bubble
                         // Shows delivery failure indicator if Twilio didn't deliver
-                        if (msg.sender === 'human') {
+                        if (msg.role === 'Human') {
   const deliveryFailed = msg.delivery_status === 'failed'
   return (
     <div key={msg.id} className="flex justify-end">
@@ -565,21 +565,21 @@ export default function Conversations() {
                         ${deliveryFailed
                           ? 'bg-slate-700 ring-1 ring-red-400'
                           : 'bg-slate-700'}`}>
-          {msg.message_text}
+          {msg.content}
         </div>
         <div className="flex items-center justify-end gap-1 mt-1 mr-1">
           {deliveryFailed ? (
             <>
               <AlertTriangle size={9} className="text-red-400" />
               <p className="text-[10px] text-red-400">
-                Not delivered · {formatTime(msg.timestamp)}
+                Not delivered · {formatTime(msg.created_at)}
               </p>
             </>
           ) : (
             <>
               <User size={9} className="text-slate-400" />
               <p className="text-[10px] text-slate-400">
-                You · {formatTime(msg.timestamp)}
+                You · {formatTime(msg.created_at)}
               </p>
             </>
           )}

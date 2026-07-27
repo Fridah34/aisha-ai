@@ -1,10 +1,12 @@
 import os
+import time
 import uuid
 from urllib.parse import quote
 
 from dotenv import find_dotenv, load_dotenv
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 load_dotenv(find_dotenv())
@@ -22,30 +24,19 @@ from app.ai.service import (  # noqa: E402
     process_customer_message,
     save_message,
 )
+
+from app.models import Customer, Product, User  # noqa: E402
+from app.webhook.client import send_browse_more_prompt, send_list_picker, send_text_message # noqa: E402
+from app.webhook.parser import extract_message_data  # noqa: E402
 from app.database import get_db  # noqa: E402
 from app.flows.marketplace_flow import (  # noqa: E402
-    add_item_to_cart,
-    create_orders_from_cart,
-    format_cart_summary,
-    get_or_create_cart,
-    get_or_create_marketplace_session,
-    get_products_for_business_category,
-    handle_marketplace_step,
-    is_checkout_command,
-    is_switch_command,
-    parse_name_and_contact,
-    parse_quantity,
-    reset_to_menu,
-    resolve_product_choice,
-    resolve_size_choice,
+    add_item_to_cart,create_orders_from_cart,extract_order_ref,format_cart_summary,
+    format_order_status,get_latest_orders_for_customer,get_or_create_cart,get_or_create_marketplace_session,
+    get_orders_by_reference,get_products_for_business_category,handle_marketplace_step,is_checkout_command,
+    is_status_command,is_switch_command,parse_name_and_contact,parse_quantity,
+    reset_to_menu,resolve_product_choice,resolve_size_choice,
 )
-from app.models import Customer, Product, User  # noqa: E402
-from app.webhook.client import (  # noqa: E402
-    send_browse_more_prompt,
-    send_list_picker,
-    send_text_message,
-)
-from app.webhook.parser import extract_message_data  # noqa: E402
+
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -100,6 +91,41 @@ def find_product_image(
 
     return None, None
 
+
+def get_active_business_id(
+    customer_phone: str, marketplace_session, db: Session
+) -> uuid.UUID | None:
+    """
+    Resolve which business a customer's free-text message belongs to.
+
+    Primary source: marketplace_session.selected_business_id — set the
+    moment a customer picks a store, but CLEARED by reset_to_menu() after
+    checkout completes or on a 'menu'/switch command (see
+    marketplace_flow.reset_to_menu). Confirmed: a customer messaging
+    right after checkout will have this as None even though they're
+    still "in" that store's context as far as the AI fallthrough is
+    concerned.
+
+    Fallback: the customer's most recently active Customer row. Customer
+    rows are permanently scoped to one business each (uq_customer_per_business),
+    so this survives marketplace_session being reset out from under us.
+    This is NOT hypothetical — it's what should have fired for the
+    "Cartier" message in the 12:18 PM session, immediately after the
+    Prada Handbag checkout reset the session to None.
+    """
+    if marketplace_session.selected_business_id:
+        return marketplace_session.selected_business_id
+
+    phone = normalize_phone(customer_phone)
+    last_customer = (
+        db.query(Customer)
+        .filter(Customer.phone_number == phone)
+        .order_by(Customer.last_seen.desc())
+        .first()
+    )
+    return last_customer.business_id if last_customer else None
+
+
 def _get_or_create_customer_for_business(
     phone_number: str, business_id: uuid.UUID, db: Session, profile_name: str | None = None
 ) -> Customer:
@@ -107,7 +133,13 @@ def _get_or_create_customer_for_business(
     marketplace_flow.py's checkout branch already uses. Needed because
     app.ai.service.get_or_create_customer no longer accepts business_id,
     but Customer.business_id is NOT NULL and customers are scoped per
-    (phone_number, business_id) via uq_customer_per_business."""
+    (phone_number, business_id) via uq_customer_per_business.
+
+    last_seen is refreshed on every touch (not just name backfill) —
+    get_active_business_id() depends on this staying current so its
+    fallback query picks the customer's truly most-recent business,
+    not whichever business happened to be touched last for unrelated
+    reasons."""
     phone = normalize_phone(phone_number)
     customer = (
         db.query(Customer)
@@ -119,8 +151,10 @@ def _get_or_create_customer_for_business(
         db.add(customer)
         db.commit()
         db.refresh(customer)
-    elif profile_name and not customer.name:
-        customer.name = profile_name
+    else:
+        customer.last_seen = func.now()
+        if profile_name and not customer.name:
+            customer.name = profile_name
         db.commit()
     return customer
 
@@ -194,6 +228,7 @@ async def receive_message(
     the same message and sending duplicates to the customer.
     """
     try:
+        t_start = time.time()
         # Read Twilio's form-encoded payload
         form = await request.form()
         form_data = dict(form)
@@ -221,6 +256,8 @@ async def receive_message(
         print(f"[Webhook] Message from {customer_phone}: {message_text}")
         
         marketplace_session = get_or_create_marketplace_session(customer_phone, db)
+        t_session = time.time()
+        print(f"[TIMING] session lookup: {t_session - t_start:.2f}s")
 
         if is_switch_command(message_text):
             reset_to_menu(marketplace_session, db)
@@ -229,6 +266,63 @@ async def receive_message(
             _send_marketplace_reply(customer_phone, reply_text, reply_items)
             return Response(status_code=200)
 
+        # ── "Track order" quick-reply tap (from aisha_post_checkout_fridah) ──
+        # Checked before the selected_business_id gate below because this
+        # button is sent right after checkout, once reset_to_menu() has
+        # already cleared the session — so by the time this tap arrives,
+        # selected_business_id is None and it would otherwise fall into
+        # the marketplace-menu branch instead of showing order status.
+        # Matches on the button's raw id ("track_order") OR any typed
+        # status keyword (is_status_command), so this also covers a
+        # customer just typing "status" free-text at any point.
+        if message_text.strip().lower() == "track_order" or is_status_command(message_text):
+            order_ref = extract_order_ref(message_text)
+            orders = (
+                get_orders_by_reference(order_ref, customer_phone, db)
+                if order_ref
+                else get_latest_orders_for_customer(customer_phone, db)
+            )
+            reply_text = format_order_status(orders)
+            send_text_message(to_phone=customer_phone, message=reply_text)
+            return Response(status_code=200)
+
+        # ── Reopen the last store instead of showing the top-level menu ──
+        # reset_to_menu() (called after checkout) clears selected_business_id
+        # but deliberately does NOT clear the active_biz:{phone} Redis key —
+        # only an explicit switch command does that (see clear_active_business
+        # above). So if selected_business_id is None but the cache still
+        # holds a value, this customer didn't say "menu"/"switch" — they just
+        # finished checkout and are still talking about that store (e.g.
+        # "Cartier" right after a Prada Handbag order). Route them back into
+        # that business instead of resetting them to the category menu.
+        #
+        # pending_action is intentionally left untouched here (not reset to
+        # None) — a customer might still be mid-flow (e.g. "awaiting_quantity")
+        # when selected_business_id got cleared some other way; only the
+        # business identity is being restored, not the conversational step.
+        
+        if marketplace_session.selected_business_id is None:
+            cached_business_id = get_active_business(customer_phone)
+            if cached_business_id:
+                try:
+                    reopened_business_id = uuid.UUID(cached_business_id)
+                except (ValueError, AttributeError, TypeError):
+                    reopened_business_id = None
+                    print(f"[Webhook] Malformed active_biz cache value: {cached_business_id!r}")
+ 
+                if reopened_business_id:
+                    still_active = (
+                        db.query(User)
+                        .filter(User.id == reopened_business_id, User.is_active)
+                        .first()
+                    )
+                    if still_active:
+                        marketplace_session.selected_business_id = reopened_business_id
+                        marketplace_session.selected_business_type = None
+                        marketplace_session.pending_action = None
+                        db.commit()
+                    else:
+                        clear_active_business(customer_phone)
         if marketplace_session.selected_business_id is None:
             reply_text, reply_items = handle_marketplace_step(marketplace_session, message_text, db)
 
@@ -257,20 +351,23 @@ async def receive_message(
             return Response(status_code=200)
 
         # ── Multi-tenancy lookup ──────────────────────────────────────
-        # The customer already picked a specific store via the list picker
-        # (marketplace_session.selected_business_id, mirrored in Redis as
-        # active_biz:{phone} for fast lookup). Every reply — including the
-        # open-ended AI branch below — must use THAT business, never just
-        # any active business, or a customer inside store B could get
-        # answers built from store A's products/knowledge base.
-        cached_business_id = get_active_business(customer_phone)
+        # selected_business_id is the source of truth (set either by the
+        # normal store-picker flow, or by the reopen-last-store block
+        # above). The Redis cache (active_biz:{phone}) is used ONLY as a
+        # fallback when selected_business_id is somehow still None here
+        # (e.g. the cache existed but the DB row for that business was
+        # deleted outright) — it never overrides a value the session
+        # already has, since the session is the authoritative, DB-backed
+        # field and the cache is just a speed-up for the common case.
         active_business_id = marketplace_session.selected_business_id
-        if cached_business_id:
-            try:
-                active_business_id = uuid.UUID(cached_business_id)
-            except (ValueError, AttributeError, TypeError):
-                print(f"[Webhook] Malformed active_biz cache value: {cached_business_id!r}")
-
+        if active_business_id is None:
+            cached_business_id = get_active_business(customer_phone)
+            if cached_business_id:
+                try:
+                    active_business_id = uuid.UUID(cached_business_id)
+                except (ValueError, AttributeError, TypeError):
+                    print(f"[Webhook] Malformed active_biz cache value: {cached_business_id!r}")
+                    
         business = None
         if active_business_id:
             business = (
@@ -397,7 +494,12 @@ async def receive_message(
                 return Response(status_code=200)
 
         elif action == "awaiting_checkout_info":
+            t_before_cart = time.time()
             cart = get_or_create_cart(customer_phone, business.id, db)
+            t_after_cart = time.time()
+            print(f"[TIMING] get_or_create_cart: {t_after_cart - t_before_cart:.2f}s")
+            
+            
             if not cart.items:
                 marketplace_session.pending_action = None
                 db.commit()
@@ -422,7 +524,10 @@ async def receive_message(
             # customer/profile_name already resolved above — reuse rather
             # than re-fetch, so this branch can't end up logging under a
             # different Customer row than the rest of the exchange.
+            t_before_orders = time.time()
             orders = create_orders_from_cart(cart, business, customer, name, contact, db)
+            t_after_orders = time.time()
+            print(f"[TIMING] create_orders_from_cart: {t_after_orders - t_before_orders:.2f}s")
 
             # order_group_id ties every line item from this one checkout
             # together — see marketplace_flow.create_orders_from_cart.
@@ -447,25 +552,40 @@ async def receive_message(
                 f"We'll contact you at {contact} to confirm payment & delivery.\n\n"
                 "_Each item is tracked separately, so status may update at different times._"
             )
-
+            
+            t_before_save= time.time()
             save_message(customer_id=customer.id, business_id=business.id, role="assistant",
                          content=confirmation_text, language=language, db=db)
+            t_after_save = time.time()
+            print(f"[TIMING] save_message (confirmation): {t_after_save - t_before_save:.2f}s")
 
             cart.items = []
             # Full reset (not just clearing pending_action) — without
             # clearing selected_business_id, the customer's next message
             # (even days later) would silently stay scoped to this store's
-            # AI instead of reopening the marketplace.
+            # AI instead of reopening the marketplace. NOTE: this is exactly
+            # what clears selected_business_id to None — get_active_business_id()
+            # exists specifically to recover from that via the Customer-row
+            # fallback on the customer's *next* message.
+            t_before_reset = time.time()
             reset_to_menu(marketplace_session, db)
-
+            t_after_reset = time.time()
+            print(f"[TIMING] reset_to_menu: {t_after_reset - t_before_reset:.2f}s")
+            
+            t_before_send = time.time()
             send_browse_more_prompt(to_phone=customer_phone, body_text=confirmation_text)
+            t_after_send = time.time()
+            print(f"[TIMING] twilio send (checkout): {t_after_send - t_before_send:.2f}s | total: {t_after_send - t_start:.2f}s")
             return Response(status_code=200)
 
         # ── Process through AISHA's AI engine (only reached on fall-through) ──
+        t_before_ai = time.time()
         result = process_customer_message(
             phone_number=customer_phone, message_text=message_text,
             business_id=business.id, db=db, profile_name=profile_name,
         )
+        t_after_ai = time.time()
+        print(f"[TIMING] AI call: {t_after_ai - t_before_ai:.2f}s")
 
         if not result.get("response"):
             print("[Webhook] AISHA returned no response")
@@ -483,6 +603,10 @@ async def receive_message(
                 mark_image_sent(customer_id=customer_id, business_id=business.id, product_id=product_id)
 
         sent = send_text_message(to_phone=customer_phone, message=result["response"], media_url=media_url)
+        t_after_send = time.time()
+        print(f"[TIMING] twilio send: {t_after_send - t_after_ai:.2f}s | total: {t_after_send - t_start:.2f}s")
+        
+        
         if not sent:
             print(f"[Webhook] Failed to deliver reply to {customer_phone}")
 
@@ -493,3 +617,4 @@ async def receive_message(
     except Exception as e:
         print(f"[Webhook] Unhandled error: {e}")
         return Response(status_code=200)
+    
