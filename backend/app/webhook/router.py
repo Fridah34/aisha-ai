@@ -11,20 +11,26 @@ from sqlalchemy.orm import Session
 
 load_dotenv(find_dotenv())
 
-from app.ai.cache import already_sent_image, mark_image_sent  # noqa : E402
-from app.ai.service import normalize_phone, process_customer_message , save_message, detect_language # noqa: E402
+from app.ai.cache import (  # noqa : E402
+    already_sent_image,
+    clear_active_business,
+    get_active_business,
+    mark_image_sent,
+    set_active_business,
+)
+from app.ai.service import (  # noqa: E402
+    detect_language,
+    normalize_phone,
+    process_customer_message,
+    save_message,
+)
 from app.database import get_db  # noqa: E402
-from app.models import Customer,Product, User  # noqa: E402
-from app.webhook.client import send_text_message, send_list_picker, send_browse_more_prompt   # noqa: E402
-from app.webhook.parser import extract_message_data  # noqa: E402
 from app.flows.marketplace_flow import (  # noqa: E402
-    get_or_create_marketplace_session, handle_marketplace_step, is_switch_command,
-    is_checkout_command, reset_to_menu, get_products_for_business_category,
-    resolve_product_choice, get_or_create_cart, resolve_size_choice,
-    parse_quantity, add_item_to_cart, format_cart_summary,
-    parse_name_and_contact, create_orders_from_cart,
-    is_status_command, extract_order_ref, get_orders_by_reference,
-    get_latest_orders_for_customer, format_order_status,
+    add_item_to_cart,create_orders_from_cart,extract_order_ref,format_cart_summary,
+    format_order_status,get_latest_orders_for_customer,get_or_create_cart,get_or_create_marketplace_session,
+    get_orders_by_reference,get_products_for_business_category,handle_marketplace_step,is_checkout_command,
+    is_status_command,is_switch_command,parse_name_and_contact,parse_quantity,
+    reset_to_menu,resolve_product_choice,resolve_size_choice,
 )
 
 
@@ -251,6 +257,7 @@ async def receive_message(
 
         if is_switch_command(message_text):
             reset_to_menu(marketplace_session, db)
+            clear_active_business(customer_phone)
             reply_text, reply_items = handle_marketplace_step(marketplace_session, message_text, db)
             _send_marketplace_reply(customer_phone, reply_text, reply_items)
             return Response(status_code=200)
@@ -275,11 +282,49 @@ async def receive_message(
             send_text_message(to_phone=customer_phone, message=reply_text)
             return Response(status_code=200)
 
+        # ── Reopen the last store instead of showing the top-level menu ──
+        # reset_to_menu() (called after checkout) clears selected_business_id
+        # but deliberately does NOT clear the active_biz:{phone} Redis key —
+        # only an explicit switch command does that (see clear_active_business
+        # above). So if selected_business_id is None but the cache still
+        # holds a value, this customer didn't say "menu"/"switch" — they just
+        # finished checkout and are still talking about that store (e.g.
+        # "Cartier" right after a Prada Handbag order). Route them back into
+        # that business instead of resetting them to the category menu.
+        #
+        # pending_action is intentionally left untouched here (not reset to
+        # None) — a customer might still be mid-flow (e.g. "awaiting_quantity")
+        # when selected_business_id got cleared some other way; only the
+        # business identity is being restored, not the conversational step.
+        
+        if marketplace_session.selected_business_id is None:
+            cached_business_id = get_active_business(customer_phone)
+            if cached_business_id:
+                try:
+                    reopened_business_id = uuid.UUID(cached_business_id)
+                except (ValueError, AttributeError, TypeError):
+                    reopened_business_id = None
+                    print(f"[Webhook] Malformed active_biz cache value: {cached_business_id!r}")
+ 
+                if reopened_business_id:
+                    still_active = (
+                        db.query(User)
+                        .filter(User.id == reopened_business_id, User.is_active)
+                        .first()
+                    )
+                    if still_active:
+                        marketplace_session.selected_business_id = reopened_business_id
+                        marketplace_session.selected_business_type = None
+                        marketplace_session.pending_action = None
+                        db.commit()
+                    else:
+                        clear_active_business(customer_phone)
         if marketplace_session.selected_business_id is None:
             reply_text, reply_items = handle_marketplace_step(marketplace_session, message_text, db)
 
             just_entered_store = marketplace_session.selected_business_id is not None
             if just_entered_store:
+                set_active_business(customer_phone, marketplace_session.selected_business_id)
                 customer = _get_or_create_customer_for_business(
                     customer_phone, marketplace_session.selected_business_id, db, profile_name=profile_name
                 )
@@ -302,25 +347,42 @@ async def receive_message(
             return Response(status_code=200)
 
         # ── Multi-tenancy lookup ──────────────────────────────────────
-        # Resolves to marketplace_session.selected_business_id when set,
-        # falling back to the customer's most recently active business
-        # when the session has been reset (e.g. right after checkout —
-        # see get_active_business_id() docstring). Replaces the previous
-        # `db.query(User).filter(User.is_active).first()`, which ignored
-        # which store the customer was actually in and answered from
-        # whichever business row happened to sort first.
-        resolved_business_id = get_active_business_id(customer_phone, marketplace_session, db)
-        business = (
-            db.query(User).filter(User.id == resolved_business_id).first()
-            if resolved_business_id else None
-        )
+        # selected_business_id is the source of truth (set either by the
+        # normal store-picker flow, or by the reopen-last-store block
+        # above). The Redis cache (active_biz:{phone}) is used ONLY as a
+        # fallback when selected_business_id is somehow still None here
+        # (e.g. the cache existed but the DB row for that business was
+        # deleted outright) — it never overrides a value the session
+        # already has, since the session is the authoritative, DB-backed
+        # field and the cache is just a speed-up for the common case.
+        active_business_id = marketplace_session.selected_business_id
+        if active_business_id is None:
+            cached_business_id = get_active_business(customer_phone)
+            if cached_business_id:
+                try:
+                    active_business_id = uuid.UUID(cached_business_id)
+                except (ValueError, AttributeError, TypeError):
+                    print(f"[Webhook] Malformed active_biz cache value: {cached_business_id!r}")
+                    
+        business = None
+        if active_business_id:
+            business = (
+                db.query(User)
+                .filter(User.id == active_business_id, User.is_active)
+                .first()
+            )
 
         if not business:
             marketplace_session.selected_business_id = None
             marketplace_session.pending_action = None
             db.commit()
+            clear_active_business(customer_phone)
             send_text_message(to_phone=customer_phone, message="That store isn't available anymore. Let's find you another!")
             return Response(status_code=200)
+
+        # Keep Redis in sync with the session's source of truth (covers the
+        # case where selected_business_id was set before this cache existed).
+        set_active_business(customer_phone, business.id)
 
         # From here on the customer is inside a specific store, so every
         # exchange has a real business to attribute it to — get/create the
