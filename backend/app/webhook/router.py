@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from dotenv import find_dotenv, load_dotenv
@@ -31,16 +32,28 @@ from app.webhook.parser import extract_message_data  # noqa: E402
 from app.database import get_db  # noqa: E402
 from app.flows.marketplace_flow import (  # noqa: E402
     add_item_to_cart,create_orders_from_cart,extract_order_ref,format_cart_summary,
-    format_order_status,get_latest_orders_for_customer,get_or_create_cart,get_or_create_marketplace_session,
+    format_order_status,format_product_list_for_business,get_latest_orders_for_business,
+    get_latest_orders_for_customer,get_or_create_cart,get_or_create_marketplace_session,
     get_orders_by_reference,get_products_for_business_category,handle_marketplace_step,is_checkout_command,
-    is_status_command,is_switch_command,parse_name_and_contact,parse_quantity,
-    reset_to_menu,resolve_product_choice,resolve_size_choice,
+    is_photo_request,is_status_command,is_switch_command,parse_name_and_contact,parse_quantity,
+    reset_after_checkout,reset_to_menu,resolve_product_choice,resolve_size_choice,friendly_status,
 )
 
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
 MAX_PRODUCT_IMAGES = 5
+
+# How long a customer's last-added product stays eligible as the implicit
+# target of a bare "can I see a photo?" with no product named. Matches
+# marketplace_flow.SESSION_TIMEOUT_HOURS so "recently active" means the
+# same thing everywhere in this project rather than introducing a second,
+# unrelated expiry rule. Bumped 30min -> 24h: WhatsApp conversations
+# routinely span hours (lunch-break add-to-cart, evening follow-up), and
+# 30 minutes was going stale in exactly the case this feature is most
+# useful for. Past this window we'd rather ask which product than guess
+# against something the customer may have forgotten about.
+STALE_PHOTO_WINDOW = timedelta(hours=24)
 
 UNSUPPORTED_MESSAGE = (
     "Sorry, I can only read text messages right now. Please type your question.\n\n"
@@ -109,9 +122,6 @@ def get_active_business_id(
     Fallback: the customer's most recently active Customer row. Customer
     rows are permanently scoped to one business each (uq_customer_per_business),
     so this survives marketplace_session being reset out from under us.
-    This is NOT hypothetical — it's what should have fired for the
-    "Cartier" message in the 12:18 PM session, immediately after the
-    Prada Handbag checkout reset the session to None.
     """
     if marketplace_session.selected_business_id:
         return marketplace_session.selected_business_id
@@ -214,6 +224,75 @@ def _send_marketplace_reply(customer_phone: str, reply_text: str, reply_items: l
         send_text_message(to_phone=customer_phone, message=reply_text)
 
 
+def _resolve_photo_target(marketplace_session, business_id: uuid.UUID, message_text: str, db: Session) -> Product | None:
+    """Resolves which product a bare/explicit photo request refers to.
+
+    1. If the customer named a product in this message, that wins outright.
+    2. Otherwise, fall back to the product they most recently added to
+       cart (last_product_id) — but only if that add happened within
+       STALE_PHOTO_WINDOW. Past that window we'd rather the customer name
+       a product than get sent a photo of something they may not even
+       remember choosing.
+    """
+    matched_product = resolve_product_choice(
+        business_id=business_id,
+        category_name=marketplace_session.selected_business_type,
+        message=message_text,
+        db=db,
+    )
+    if matched_product:
+        return matched_product
+
+    if not marketplace_session.last_product_id:
+        return None
+
+    is_fresh = (
+        datetime.now(timezone.utc) - marketplace_session.updated_at
+    ) < STALE_PHOTO_WINDOW
+    if not is_fresh:
+        return None
+
+    return db.query(Product).filter(Product.id == marketplace_session.last_product_id).first()
+
+
+def _send_product_photo(
+    customer_phone: str, business: User, product: Product, db: Session, customer: Customer, language: str
+) -> None:
+    """Sends one specific product's photo with a caption naming it, and logs
+    the exchange. Shared by both the immediate-match path and the
+    awaiting_photo_choice follow-up, so the caption/logging behavior can't
+    drift between the two call sites."""
+    base_url = os.getenv("BASE_URL", "").rstrip("/")
+    public_url = _build_public_image_url(product.image_url, base_url)
+    caption = (
+        f"Here's {product.name} — Ksh {product.price}\n\n"
+        "Want to see other products? Reply 'menu' to browse by category, "
+        "then reply with a product name to see its photo."
+    )
+    send_text_message(to_phone=customer_phone, message=caption, media_url=public_url)
+    # Explicit request bypasses already_sent_image entirely — that's the
+    # whole point — but still marks it sent so a later automatic mention
+    # doesn't immediately resend it a second time.
+    mark_image_sent(customer_id=customer_phone, business_id=business.id, product_id=product.id)
+    save_message(customer_id=customer.id, business_id=business.id, role="assistant",
+                 content=caption, language=language, db=db)
+
+
+def _send_fallback_reply(
+    customer_phone: str, business_id: uuid.UUID, customer: Customer, language: str, reply_text: str, db: Session
+) -> None:
+    """Shared no-match/dead-state reply used by every awaiting_* branch
+    below that previously had no explicit 'else' — those branches used to
+    fall all the way through to process_customer_message() (the LLM) when
+    nothing matched, which produces a plausible-sounding but state-blind
+    reply (see the "one-stop shop" bug: a customer's stray message while
+    mid-flow got answered by the AI instead of by the deterministic flow
+    it was actually in). Every deterministic state now replies for itself
+    instead of silently falling through."""
+    save_message(customer_id=customer.id, business_id=business_id, role="assistant",
+                 content=reply_text, language=language, db=db)
+    send_text_message(to_phone=customer_phone, message=reply_text)
+
 
 @router.post("")
 async def receive_message(
@@ -246,6 +325,11 @@ async def receive_message(
         message_text = data["message_text"]
         message_type = data["message_type"]
         profile_name = data.get("customer_name")
+        # Interactive taps carry a stable id here regardless of the
+        # button's visible label — parser.py sets message_text to the
+        # LABEL when present, so button_payload is what tap-matching
+        # below should key off of, not message_text.
+        button_payload = data.get("button_payload")
 
         # ── Unsupported type (image, voice note, sticker) ────────────
         if message_type not in ("text", "interactive") or not message_text:
@@ -267,40 +351,49 @@ async def receive_message(
             return Response(status_code=200)
 
         # ── "Track order" quick-reply tap (from aisha_post_checkout_fridah) ──
-        # Checked before the selected_business_id gate below because this
-        # button is sent right after checkout, once reset_to_menu() has
-        # already cleared the session — so by the time this tap arrives,
-        # selected_business_id is None and it would otherwise fall into
-        # the marketplace-menu branch instead of showing order status.
-        # Matches on the button's raw id ("track_order") OR any typed
-        # status keyword (is_status_command), so this also covers a
-        # customer just typing "status" free-text at any point.
-        if message_text.strip().lower() == "track_order" or is_status_command(message_text):
+        if button_payload == "track_order" or message_text.strip().lower() == "track_order" or is_status_command(message_text):
             order_ref = extract_order_ref(message_text)
-            orders = (
-                get_orders_by_reference(order_ref, customer_phone, db)
-                if order_ref
-                else get_latest_orders_for_customer(customer_phone, db)
-            )
+            if order_ref:
+                orders = get_orders_by_reference(order_ref, customer_phone, db)
+            elif marketplace_session.selected_business_id:
+                orders = get_latest_orders_for_business(
+                    customer_phone, marketplace_session.selected_business_id, db
+                )
+                if not orders:
+                    current_business = (
+                        db.query(User).filter(User.id == marketplace_session.selected_business_id).first()
+                    )
+                    business_label = current_business.business_name if current_business else "this store"
+                    reply_text = (
+                        f"You don't have an order with {business_label} yet.\n\n"
+                        "If you have an order reference from another store, reply "
+                        "with it to check that order's status, or reply 'switch' "
+                        "to browse other businesses."
+                    )
+                    send_text_message(to_phone=customer_phone, message=reply_text)
+                    return Response(status_code=200)
+            else:
+                orders = get_latest_orders_for_customer(customer_phone, db)
             reply_text = format_order_status(orders)
             send_text_message(to_phone=customer_phone, message=reply_text)
             return Response(status_code=200)
 
+        # ── "Browse more" quick-reply tap (from aisha_post_checkout_fridah) ──
+        if button_payload == "browse_more":
+            if marketplace_session.selected_business_id and marketplace_session.selected_business_type:
+                marketplace_session.pending_action = "awaiting_product_choice"
+                marketplace_session.list_offset = 0
+                db.commit()
+                product_text = format_product_list_for_business(
+                    db, marketplace_session.selected_business_id, marketplace_session.selected_business_type
+                )
+                send_text_message(to_phone=customer_phone, message=product_text)
+            else:
+                reply_text, reply_items = handle_marketplace_step(marketplace_session, "menu", db)
+                _send_marketplace_reply(customer_phone, reply_text, reply_items)
+            return Response(status_code=200)
+
         # ── Reopen the last store instead of showing the top-level menu ──
-        # reset_to_menu() (called after checkout) clears selected_business_id
-        # but deliberately does NOT clear the active_biz:{phone} Redis key —
-        # only an explicit switch command does that (see clear_active_business
-        # above). So if selected_business_id is None but the cache still
-        # holds a value, this customer didn't say "menu"/"switch" — they just
-        # finished checkout and are still talking about that store (e.g.
-        # "Cartier" right after a Prada Handbag order). Route them back into
-        # that business instead of resetting them to the category menu.
-        #
-        # pending_action is intentionally left untouched here (not reset to
-        # None) — a customer might still be mid-flow (e.g. "awaiting_quantity")
-        # when selected_business_id got cleared some other way; only the
-        # business identity is being restored, not the conversational step.
-        
         if marketplace_session.selected_business_id is None:
             cached_business_id = get_active_business(customer_phone)
             if cached_business_id:
@@ -328,37 +421,37 @@ async def receive_message(
 
             just_entered_store = marketplace_session.selected_business_id is not None
             if just_entered_store:
-                set_active_business(customer_phone, marketplace_session.selected_business_id)
-                customer = _get_or_create_customer_for_business(
-                    customer_phone, marketplace_session.selected_business_id, db, profile_name=profile_name
-                )
-                language = detect_language(message_text)
-                save_message(customer_id=customer.id, business_id=marketplace_session.selected_business_id,
-                              role="user", content=message_text, language=language, db=db)
-                save_message(customer_id=customer.id, business_id=marketplace_session.selected_business_id,
-                              role="assistant", content=reply_text, language=language, db=db)
+                # Side effects (customer create/log, product photos) are
+                # best-effort here — wrapped so a mid-request DB hiccup
+                # (e.g. Neon dropping the connection) can't eat the actual
+                # reply below. Previously these ran un-guarded ahead of
+                # _send_marketplace_reply, so a crash here meant the store
+                # selection got committed to the DB but the customer never
+                # heard back — their next message then landed in a
+                # pending_action state with no idea how it got there.
                 try:
+                    set_active_business(customer_phone, marketplace_session.selected_business_id)
+                    customer = _get_or_create_customer_for_business(
+                        customer_phone, marketplace_session.selected_business_id, db, profile_name=profile_name
+                    )
+                    language = detect_language(message_text)
+                    save_message(customer_id=customer.id, business_id=marketplace_session.selected_business_id,
+                                  role="user", content=message_text, language=language, db=db)
+                    save_message(customer_id=customer.id, business_id=marketplace_session.selected_business_id,
+                                  role="assistant", content=reply_text, language=language, db=db)
                     _send_product_photos(
                         customer_phone=customer_phone,
                         business_id=marketplace_session.selected_business_id,
                         category_name=marketplace_session.selected_business_type,
                         db=db,
                     )
-                except Exception as photo_error:
-                    print(f"[Webhook] Product photo send failed: {photo_error}")
+                except Exception as side_effect_error:
+                    print(f"[Webhook] Post-store-entry side effect failed: {side_effect_error}")
 
             _send_marketplace_reply(customer_phone, reply_text, reply_items)
             return Response(status_code=200)
 
         # ── Multi-tenancy lookup ──────────────────────────────────────
-        # selected_business_id is the source of truth (set either by the
-        # normal store-picker flow, or by the reopen-last-store block
-        # above). The Redis cache (active_biz:{phone}) is used ONLY as a
-        # fallback when selected_business_id is somehow still None here
-        # (e.g. the cache existed but the DB row for that business was
-        # deleted outright) — it never overrides a value the session
-        # already has, since the session is the authoritative, DB-backed
-        # field and the cache is just a speed-up for the common case.
         active_business_id = marketplace_session.selected_business_id
         if active_business_id is None:
             cached_business_id = get_active_business(customer_phone)
@@ -384,15 +477,8 @@ async def receive_message(
             send_text_message(to_phone=customer_phone, message="That store isn't available anymore. Let's find you another!")
             return Response(status_code=200)
 
-        # Keep Redis in sync with the session's source of truth (covers the
-        # case where selected_business_id was set before this cache existed).
         set_active_business(customer_phone, business.id)
 
-        # From here on the customer is inside a specific store, so every
-        # exchange has a real business to attribute it to — get/create the
-        # Customer row and log the incoming message once, up front, so
-        # every branch below shares the same customer/language rather than
-        # re-deriving them (and risking drift) at each return point.
         customer = _get_or_create_customer_for_business(customer_phone, business.id, db, profile_name=profile_name)
         language = detect_language(message_text)
         save_message(
@@ -403,6 +489,24 @@ async def receive_message(
             language=language,
             db=db,
         )
+
+        if is_photo_request(message_text):
+            matched_product = _resolve_photo_target(marketplace_session, business.id, message_text, db)
+
+            if matched_product and matched_product.image_url:
+                _send_product_photo(customer_phone, business, matched_product, db, customer, language)
+                _send_product_prompt(customer_phone, marketplace_session, matched_product, db, customer, language)
+                return Response(status_code=200)
+
+            marketplace_session.pending_action = "awaiting_photo_choice"
+            db.commit()
+            reply_text = format_product_list_for_business(
+                db, business.id, marketplace_session.selected_business_type
+            )
+            save_message(customer_id=customer.id, business_id=business.id, role="assistant",
+                         content=reply_text, language=language, db=db)
+            send_text_message(to_phone=customer_phone, message=reply_text)
+            return Response(status_code=200)
 
         action = marketplace_session.pending_action
 
@@ -417,12 +521,65 @@ async def receive_message(
                 _send_product_prompt(customer_phone, marketplace_session, matched_product, db, customer, language)
                 return Response(status_code=200)
 
+            # No match — previously fell through to the AI here with no
+            # awareness the customer was mid product-selection.
+            reply_text = (
+                "Sorry, please reply with a product name from the list above, "
+                "or 'menu' to start over."
+            )
+            _send_fallback_reply(customer_phone, business.id, customer, language, reply_text, db)
+            return Response(status_code=200)
+
+        elif action == "awaiting_photo_choice":
+            # Follow-up to the "which product?" list sent above. Deterministic
+            # match only — no LLM involved, same philosophy as every other
+            # numbered/named selection in this file (category, store, size).
+            matched_product = resolve_product_choice(
+                business_id=business.id,
+                category_name=marketplace_session.selected_business_type,
+                message=message_text,
+                db=db,
+            )
+            if matched_product and matched_product.image_url:
+                # No explicit pending_action=None here — _send_product_prompt
+                # below sets it to awaiting_size/awaiting_quantity itself,
+                # same reasoning as the block above.
+                _send_product_photo(customer_phone, business, matched_product, db, customer, language)
+                _send_product_prompt(customer_phone, marketplace_session, matched_product, db, customer, language)
+                return Response(status_code=200)
+
+            if matched_product and not matched_product.image_url:
+                marketplace_session.pending_action = None
+                db.commit()
+                reply_text = f"Sorry, we don't have a photo for {matched_product.name} yet — happy to describe it though!"
+                save_message(customer_id=customer.id, business_id=business.id, role="assistant",
+                             content=reply_text, language=language, db=db)
+                send_text_message(to_phone=customer_phone, message=reply_text)
+                return Response(status_code=200)
+
+            # No match — re-show the list rather than silently drop into
+            # the AI (which would risk the same false "can't share photos"
+            # reply this whole change exists to avoid).
+            reply_text = "Sorry, please reply with a product name from the list above:\n\n" + format_product_list_for_business(
+                db, business.id, marketplace_session.selected_business_type
+            )
+            save_message(customer_id=customer.id, business_id=business.id, role="assistant",
+                         content=reply_text, language=language, db=db)
+            send_text_message(to_phone=customer_phone, message=reply_text)
+            return Response(status_code=200)
+
         elif action == "awaiting_size":
             product = db.query(Product).filter(Product.id == marketplace_session.selected_product_id).first()
             if not product:
                 marketplace_session.pending_action = None
                 marketplace_session.selected_product_id = None
                 db.commit()
+                # Previously fell through to the AI with no return here —
+                # a deleted/deactivated product mid-flow used to silently
+                # produce an LLM-generated reply instead of this.
+                reply_text = "Sorry, that product is no longer available. Reply 'menu' to browse again."
+                _send_fallback_reply(customer_phone, business.id, customer, language, reply_text, db)
+                return Response(status_code=200)
             else:
                 chosen_size = resolve_size_choice(message_text, product.variant_options)
                 if not chosen_size:
@@ -448,6 +605,11 @@ async def receive_message(
                 marketplace_session.selected_product_id = None
                 marketplace_session.selected_size = None
                 db.commit()
+                # Same fix as awaiting_size above — reply instead of
+                # silently falling through to the AI.
+                reply_text = "Sorry, that product is no longer available. Reply 'menu' to browse again."
+                _send_fallback_reply(customer_phone, business.id, customer, language, reply_text, db)
+                return Response(status_code=200)
             elif qty is None:
                 reply_text = "Please reply with just a number, e.g. 2"
                 save_message(customer_id=customer.id, business_id=business.id, role="assistant",
@@ -457,6 +619,7 @@ async def receive_message(
             else:
                 cart = get_or_create_cart(customer_phone, business.id, db)
                 add_item_to_cart(cart, product, marketplace_session.selected_size, qty, db)
+                marketplace_session.last_product_id = product.id
                 marketplace_session.selected_product_id = None
                 marketplace_session.selected_size = None
                 marketplace_session.pending_action = "awaiting_cart_action"
@@ -493,6 +656,15 @@ async def receive_message(
                 _send_product_prompt(customer_phone, marketplace_session, matched_product, db, customer, language)
                 return Response(status_code=200)
 
+            # Neither a checkout command nor a recognizable product —
+            # previously fell through to the AI here.
+            reply_text = (
+                "Sorry, I didn't recognize that. Reply 'checkout' to complete "
+                "your order, or send a product name to add more."
+            )
+            _send_fallback_reply(customer_phone, business.id, customer, language, reply_text, db)
+            return Response(status_code=200)
+
         elif action == "awaiting_checkout_info":
             t_before_cart = time.time()
             cart = get_or_create_cart(customer_phone, business.id, db)
@@ -521,25 +693,18 @@ async def receive_message(
             if not contact:
                 contact = customer_phone
 
-            # customer/profile_name already resolved above — reuse rather
-            # than re-fetch, so this branch can't end up logging under a
-            # different Customer row than the rest of the exchange.
             t_before_orders = time.time()
             orders = create_orders_from_cart(cart, business, customer, name, contact, db)
             t_after_orders = time.time()
             print(f"[TIMING] create_orders_from_cart: {t_after_orders - t_before_orders:.2f}s")
 
-            # order_group_id ties every line item from this one checkout
-            # together — see marketplace_flow.create_orders_from_cart.
-            # Built here (not in marketplace_flow) because this is the
-            # message actually sent to the customer.
             order_ref = (
                 str(orders[0].order_group_id)[:8]
                 if orders and orders[0].order_group_id
                 else "N/A"
             )
             item_lines = [
-                f"- {o.quantity}x {o.snapshot_product_name} — Ksh {o.total_amount:.2f} — _{o.status.value}_"
+                f"- {o.quantity}x {o.snapshot_product_name} — Ksh {o.total_amount:.2f} — _{friendly_status(o.status.value)}_"
                 for o in orders
             ]
             total = sum(o.total_amount for o in orders)
@@ -560,17 +725,10 @@ async def receive_message(
             print(f"[TIMING] save_message (confirmation): {t_after_save - t_before_save:.2f}s")
 
             cart.items = []
-            # Full reset (not just clearing pending_action) — without
-            # clearing selected_business_id, the customer's next message
-            # (even days later) would silently stay scoped to this store's
-            # AI instead of reopening the marketplace. NOTE: this is exactly
-            # what clears selected_business_id to None — get_active_business_id()
-            # exists specifically to recover from that via the Customer-row
-            # fallback on the customer's *next* message.
             t_before_reset = time.time()
-            reset_to_menu(marketplace_session, db)
+            reset_after_checkout(marketplace_session, db)
             t_after_reset = time.time()
-            print(f"[TIMING] reset_to_menu: {t_after_reset - t_before_reset:.2f}s")
+            print(f"[TIMING] reset_after_checkout: {t_after_reset - t_before_reset:.2f}s")
             
             t_before_send = time.time()
             send_browse_more_prompt(to_phone=customer_phone, body_text=confirmation_text)
@@ -595,6 +753,9 @@ async def receive_message(
         matched_image_url, product_id = find_product_image(result["response"], business.id, db)
 
         if matched_image_url and product_id:
+            marketplace_session.last_product_id = product_id
+            db.commit()
+
             customer_id = result["customer_id"]
             if already_sent_image(customer_id=customer_id, business_id=business.id, product_id=product_id):
                 pass

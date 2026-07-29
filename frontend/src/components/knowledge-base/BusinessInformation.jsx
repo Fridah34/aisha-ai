@@ -59,6 +59,12 @@ export default function BusinessInformation({ onDirtyChange }) {
 		setSettings(current => ({ ...current, ...updated }))
 	}
 
+	// NEW
+	async function handleSaveDeliveryLocation(deliveryLocation) {
+		const updated = await updateSettings({ delivery_location: deliveryLocation })
+		setSettings(current => ({ ...current, ...updated }))
+	}
+
 	if (loading) {
 		return (
 			<div className="space-y-6">
@@ -93,9 +99,11 @@ export default function BusinessInformation({ onDirtyChange }) {
 					businessName={settings?.business_name}
 					businessType={settings?.business_type}
 					description={profile.businessProfile.description}
+					deliveryLocation={settings?.delivery_location}          // NEW
 					savedAt={profile.updatedAt.businessProfile ? new Date(profile.updatedAt.businessProfile) : null}
 					onSaveBusinessType={handleSaveBusinessType}
 					onSaveDescription={description => updateSection('businessProfile', { description })}
+					onSaveDeliveryLocation={handleSaveDeliveryLocation}     // NEW
 					onDirtyChange={setDirty('profile')}
 				/>
 

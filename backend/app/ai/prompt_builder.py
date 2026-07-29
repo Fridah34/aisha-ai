@@ -249,6 +249,13 @@ def build_system_prompt(
         "- Do not discuss politics, religion, or anything unrelated to the business\n"
         "- If directly asked whether you are an AI, be honest\n"
         "- If you receive a voice note or unsupported message type,ask the customer to type their question\n"
+        
+        "IMAGES:\n"
+        "- You cannot personally attach images, but the system automatically sends a "
+        "product photo when you mention a product by its exact name from the list above.\n"
+        "- Never say you 'can't share photos' — if asked for one, just mention the product "
+        "by name naturally and the photo will be sent automatically.\n"
+        "\n"
         "UNSUPPORTED MESSAGE TYPES:\n"
         "If you receive a message you cannot understand or that seems\n"
         "like a transcription error, politely ask the customer to\n"

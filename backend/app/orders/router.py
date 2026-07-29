@@ -12,10 +12,11 @@ import uuid
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.models import User
+from app.models import OrderStatus, User
 from app.orders import crud
 from app.orders.schemas import OrderGroupResponse, OrderItemResponse, OrderStatusUpdate
 from fastapi import APIRouter, Depends, HTTPException
+from app.flows.marketplace_flow import notify_shipping, notify_payment_received, notify_delivered, notify_cancelled
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -57,12 +58,7 @@ def list_orders(
 
 
 @router.patch("/{order_id}/status", response_model=OrderItemResponse)
-def set_order_status(
-    order_id: uuid.UUID,
-    payload: OrderStatusUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def set_order_status(order_id: uuid.UUID, payload:OrderStatusUpdate,current_user: User= Depends(get_current_user),db: Session = Depends(get_db),):
     """Updates one line item's fulfilment status. Scoped to the owning
     business via get_order_by_id — a 404 (not 403) on mismatch, same
     pattern as categories/router.py, so the API doesn't confirm an
@@ -70,8 +66,21 @@ def set_order_status(
     order = crud.get_order_by_id(db, order_id, current_user.id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-
+    
+    previous_status = order.status
     updated = crud.update_order_status(db, order, payload.status)
+    
+    if previous_status != OrderStatus.PAID and updated.status ==OrderStatus.PAID:
+        notify_payment_received(updated, current_user, db)
+    elif previous_status != OrderStatus.SHIPPED and updated.status == OrderStatus.SHIPPED:
+        notify_shipping(updated, current_user, db)
+    elif previous_status != OrderStatus.DELIVERED and updated.status == OrderStatus.DELIVERED:
+        notify_delivered(updated, current_user, db)
+    elif previous_status != OrderStatus.CANCELLED and updated.status == OrderStatus.CANCELLED:
+        was_paid = previous_status in (OrderStatus.PAID, OrderStatus.SHIPPED)
+        notify_cancelled(updated, current_user, db, was_paid=was_paid)
+        
+        
     return OrderItemResponse(
         id=updated.id,
         product_id=updated.product_id,
