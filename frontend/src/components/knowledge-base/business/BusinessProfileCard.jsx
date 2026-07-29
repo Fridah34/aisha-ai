@@ -16,20 +16,24 @@ export default function BusinessProfileCard({
 	businessName,
 	businessType,
 	description,
+	deliveryLocation,               // NEW
 	savedAt,
 	onSaveBusinessType,
 	onSaveDescription,
+	onSaveDeliveryLocation,         // NEW
 	onDirtyChange,
 }) {
 	const [isEditing, setIsEditing] = useState(false)
 	const [draftType, setDraftType] = useState(businessType || 'general')
 	const [draftDescription, setDraftDescription] = useState(description || '')
+	const [draftDeliveryLocation, setDraftDeliveryLocation] = useState(deliveryLocation || '')  // NEW
 	const [saveStatus, setSaveStatus] = useState('idle')
 	const { showToast } = useToast()
 
 	function startEditing() {
 		setDraftType(businessType || 'general')
 		setDraftDescription(description || '')
+		setDraftDeliveryLocation(deliveryLocation || '')  // NEW
 		setIsEditing(true)
 		onDirtyChange?.(false)
 	}
@@ -51,6 +55,7 @@ export default function BusinessProfileCard({
 		try {
 			await onSaveBusinessType(draftType)
 			onSaveDescription(draftDescription)
+			await onSaveDeliveryLocation(draftDeliveryLocation)  // NEW
 			setSaveStatus('saved')
 			showToast('✓ Business Profile saved', { variant: 'success' })
 			setIsEditing(false)
@@ -89,6 +94,15 @@ export default function BusinessProfileCard({
 							<p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{description}</p>
 						) : (
 							<p className="mt-1 text-sm text-slate-400">No description added yet.</p>
+						)}
+					</div>
+					{/* NEW block */}
+					<div>
+						<p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Order Pickup / Delivery Location</p>
+						{deliveryLocation ? (
+							<p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{deliveryLocation}</p>
+						) : (
+							<p className="mt-1 text-sm text-slate-400">No pickup location added yet.</p>
 						)}
 					</div>
 				</div>
@@ -138,6 +152,24 @@ export default function BusinessProfileCard({
 							placeholder="Tell AISHA what your business does and what makes it special."
 							className={fieldClassName()}
 						/>
+					</div>
+
+					{/* NEW field */}
+					<div>
+						<label htmlFor="delivery-location" className="block text-sm font-medium text-slate-700">
+							Order Pickup / Delivery Location
+						</label>
+						<input
+							id="delivery-location"
+							type="text"
+							value={draftDeliveryLocation}
+							onChange={handleChange(setDraftDeliveryLocation)}
+							placeholder="e.g. Our shop, Kimathi Street, Nairobi"
+							className={fieldClassName()}
+						/>
+						<p className="mt-1 text-xs text-slate-400">
+							Sent to customers automatically when their order status changes to Shipping.
+						</p>
 					</div>
 				</div>
 			)}

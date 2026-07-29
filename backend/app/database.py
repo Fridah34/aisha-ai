@@ -22,6 +22,13 @@ logging.basicConfig(
     level=logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+# Silence noisy third-party libraries at DEBUG. Left at root DEBUG in dev,
+# these dump full HTTP request/response bodies (Groq + Twilio API payloads,
+# connection-pool internals) on every call, burying the app's own
+# [Webhook]/[Twilio]/[Redis] prints that actually matter for debugging.
+for noisy_logger in ("httpx", "httpcore", "urllib3", "twilio.http_client", "groq", "hpack", "redis"):
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+    
 # ==============================================================================
 # CONNECTION PATH CONFIGURATION
 # ==============================================================================

@@ -26,6 +26,7 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 class SettingsUpdate(BaseModel):
     knowledge_base_text: Optional[str] = None
     business_type: Optional[str] = None  # "retail" | "services" | "general"
+    delivery_location: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
@@ -33,6 +34,7 @@ class SettingsResponse(BaseModel):
     business_name: str
     knowledge_base_text: Optional[str]
     business_type: Optional[str]
+    delivery_location: Optional[str]  
 
     class Config:
         from_attributes = True
@@ -70,6 +72,9 @@ def update_settings(
 
     if updates.knowledge_base_text is not None:
         user.knowledge_base_text = updates.knowledge_base_text
+        
+    if updates.delivery_location is not None:
+        user.delivery_location = updates.delivery_location
 
     if updates.business_type is not None:
         valid_types = {"retail", "services", "general"}
