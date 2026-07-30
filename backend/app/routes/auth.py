@@ -13,6 +13,7 @@ from app.auth.utils import (
     create_access_token,
     hash_password,
     refresh_access_token,
+    verify_access_token,
     verify_password,
 )
 from app.crud import get_user_by_email
