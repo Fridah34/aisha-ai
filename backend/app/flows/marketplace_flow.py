@@ -57,6 +57,17 @@ ORDER_STATUS_LABELS = {
     "cancelled": "Cancelled",
 }
 
+BUSINESS_QUESTION_KEYWORDS = (
+    # stock / variant availability
+    "do you have", "is there a", "any other color", "any other colour",
+    "different color", "different colour", "any in", "got any", "any chance of",
+    # store location
+    "where is", "where are you", "your location", "store located", "located",
+    # delivery / shipping coverage
+    "where do you deliver", "do you deliver", "deliver to", "delivery area",
+    "where do you guys deliver", "shipping to",
+)
+
 
 def friendly_status(status_value: str) -> str:
     return ORDER_STATUS_LABELS.get(status_value, status_value.replace("_", " ").title())
@@ -447,6 +458,17 @@ def get_latest_orders_for_business(
     if not latest.order_group_id:
         return [latest]
     return db.query(Order).filter(Order.order_group_id == latest.order_group_id).all()
+
+def is_business_question(message: str) -> bool:
+    """Catches questions only the business itself can answer — stock/variant
+    availability, store location, delivery coverage — so they route to a
+    human handover instead of the generic 'didn't recognize that' fallback.
+    Deliberately keyword-based, not AI-routed: keeps this state fully
+    deterministic like every other awaiting_* branch (see
+    _send_fallback_reply's docstring above), at the cost of needing this
+    list extended by hand as new phrasings turn up in real conversations."""
+    text = message.strip().lower()
+    return any(kw in text for kw in BUSINESS_QUESTION_KEYWORDS)
 
 
 def format_order_status(orders: list[Order]) -> str:

@@ -30,6 +30,7 @@ from app.ai.service import (  # noqa: E402
 )
 from app.database import get_db  # noqa: E402
 from app.flows.marketplace_flow import (  # noqa: E402
+<<<<<<< HEAD
     add_item_to_cart,
     create_orders_from_cart,
     extract_order_ref,
@@ -55,6 +56,14 @@ from app.flows.marketplace_flow import (  # noqa: E402
     reset_to_menu,
     resolve_product_choice,
     resolve_size_choice,
+=======
+    add_item_to_cart,create_orders_from_cart,extract_order_ref,format_cart_summary,
+    format_order_status,format_product_list_for_business,get_latest_orders_for_business,
+    get_latest_orders_for_customer,get_or_create_cart,get_or_create_marketplace_session,
+    get_orders_by_reference,get_products_for_business_category,handle_marketplace_step,is_checkout_command,
+    is_photo_request,is_status_command,is_switch_command,is_business_question,parse_name_and_contact,parse_quantity,
+    reset_after_checkout,reset_to_menu,resolve_product_choice,resolve_size_choice,friendly_status,
+>>>>>>> 49b8aea80e0ae7325ce7d5d4455f993b8892ef5d
 )
 from app.models import Customer, HandoverStatus, Product, User  # noqa: E402
 from app.webhook.client import (  # noqa: E402
@@ -732,6 +741,25 @@ async def receive_message(
             )
             if matched_product:
                 _send_product_prompt(customer_phone, marketplace_session, matched_product, db, customer, language)
+                return Response(status_code=200)
+            
+            # NEW: "do you have a purple one?" / "where is your store?" / "where
+            # do you deliver?" — hand off to a human AND answer immediately via
+            # AI, so the customer isn't left waiting on the owner to notice.
+            # marketplace_session.pending_action is deliberately left untouched
+            # here (still "awaiting_cart_action") — process_customer_message()
+            # doesn't manage cart state, so 'checkout' or another product name
+            # still works normally on the customer's next message.
+            if is_business_question(message_text):
+                result = process_customer_message(
+                    phone_number=customer_phone, message_text=message_text,
+                    business_id=business.id, db=db, profile_name=profile_name,
+                )
+                reply_text = result.get("response") or (
+                    "Let me connect you with the team to check on that — they'll be with you shortly."
+                )
+                send_text_message(to_phone=customer_phone, message=reply_text)
+                print(f"[Webhook] Handover flagged (business question) for customer {customer_phone}, business {business.id}: {message_text!r}")
                 return Response(status_code=200)
 
             # Neither a checkout command nor a recognizable product —

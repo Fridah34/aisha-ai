@@ -128,9 +128,11 @@ export default function Signup() {
 
             // Smart delay redirection logic branch
             if (result?.success) {
-                setSuccess('Account created successfully! Please login to continue...');
+                setSuccess('Account created successfully! Redirecting to login...');
                 setTimeout(() => {
-                    navigate('/login', { replace: true });
+                    navigate('/login', { replace: true, state: {
+                        message: 'Account created! Please sign in.'
+                    }, });
                 }, 2000);
             }
         } catch (err) {
