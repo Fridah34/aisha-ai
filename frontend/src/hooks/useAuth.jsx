@@ -89,7 +89,6 @@ const signup = useCallback(async (credentials) => {
             withCredentials: true,
         });
         const userProfile = data.user || data;
-        persistSession(userProfile);
         return{ success: true, user: userProfile };
     } catch (err) {
         const errorMessage = parseFastApiError(err, 'Signup failed');
@@ -98,7 +97,7 @@ const signup = useCallback(async (credentials) => {
     } finally {
         setLoading(false);
     }
-}, [persistSession]);
+}, []);
 
 //=============================================================
 //USER LOGIN(VERIFICATION EVENT)

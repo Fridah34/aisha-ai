@@ -48,19 +48,74 @@
     //========================================================
     //Runs automatically when a message comes back from the server to our frontend
 
+    let isRefreshing = false;
+    let refreshQueue = [];
+
+    const flushQueue = (error) =>{
+        refreshQueue.forEach(({ resolve, reject }) => {
+            if (error) reject(error);
+            else resolve();
+        });
+        refreshQueue = [];
+    };
+
+    const goToLogin = () => {
+        localStorage.removeItem('user');
+        localStorage.removeItem('business_id');
+        window.location.href = '/login';
+    };
+
     api.interceptors.response.use(
         (response) => response,
-        (error) =>{
+        async (error) => {
             const currentPath = window.location.pathname;
-            // If the server responds with a 401 Unauthorized error, it means the user's session has expired or is invalid.
-            if (error.response && error.response.status === 401 && currentPath !== '/login') {
-                // Clear locally cached user data
-                localStorage.removeItem('user');
+            const originalRequest = error.config;
 
-                //kick the user back to the login screen so they can re-authenticate
-                window.location.href = '/login';
+            const isAuthFailure = error.response && error.response.status === 401;
+            const isRefreshCall = originalRequest?.url?.includes('/auth/refresh');
+            const isLoginCall = originalRequest?.url?.includes('/auth/login');
+
+            // Don't try to refresh on the login page itself, on the refresh
+            // call failing, on the login call failing, or on a request we've
+            // already retried once — any of those means refreshing won't help.
+            if (
+                !isAuthFailure ||
+                currentPath === '/login' ||
+                isRefreshCall ||
+                isLoginCall ||
+                originalRequest._retry
+            ) {
+                if (isAuthFailure && currentPath !== '/login' && !isRefreshCall) {
+                    goToLogin();
+                }
+                return Promise.reject(error);
             }
-            return Promise.reject(error);
+
+            originalRequest._retry = true;
+
+            // If a refresh is already in flight (e.g. several requests 401'd
+            // at once), queue this request behind it instead of firing a
+            // second refresh call.
+            if (isRefreshing) {
+                return new Promise((resolve, reject) => {
+                    refreshQueue.push({ resolve, reject });
+                })
+                    .then(() => api(originalRequest))
+                    .catch((err) => Promise.reject(err));
+            }
+
+            isRefreshing = true;
+            try {
+                await api.post('/auth/refresh', null, { withCredentials: true });
+                isRefreshing = false;
+                flushQueue(null);
+                return api(originalRequest); // retry the original request with the new cookie
+            } catch (refreshError) {
+                isRefreshing = false;
+                flushQueue(refreshError);
+                goToLogin();
+                return Promise.reject(refreshError);
+            }
         }
     );
 
