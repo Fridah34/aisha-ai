@@ -15,8 +15,8 @@ from datetime import datetime
 from decimal import Decimal  # Guarding against floating-point transaction errors
 from typing import Any
 
-from app.database import Base
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -31,6 +31,8 @@ from sqlalchemy import (
 from sqlalchemy import Enum as EnumSQL
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
 
 
 # ==============================================================================
