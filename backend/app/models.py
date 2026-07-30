@@ -38,7 +38,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 class OrderStatus(enum.Enum):
     PENDING = "pending"
     PAID = "paid"
-    SHIPPING = "shipping"
+    SHIPPED = "shipped"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
 
@@ -94,6 +94,7 @@ class User(Base):
     business_name: Mapped[str] = mapped_column(String(150), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     knowledge_base_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_location: Mapped[str | None] = mapped_column(String(300), nullable=True)
     business_type: Mapped[BusinessType] = mapped_column(
         EnumSQL(BusinessType), default=BusinessType.retail, nullable=False
     )
@@ -417,6 +418,19 @@ class MarketplaceSession(Base):
         nullable=True,
         index=True,
     )
+    
+    last_product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("products.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    
+    last_product: Mapped["Product | None"] = relationship(
+        "Product", foreign_keys= [last_product_id]
+    )
+    
+    
     selected_product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),
