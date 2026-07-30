@@ -12,6 +12,7 @@ from app.auth.dependencies import get_current_user
 from app.conversations import crud
 from app.conversations.schemas import ConversationSummary, ConversationThread
 from app.database import get_db
+from app.handover import HandoverService
 from app.models import ConversationState, Customer, HandoverStatus, User
 from app.webhook.client import send_text_message
 from fastapi import APIRouter, Depends, HTTPException
@@ -65,6 +66,7 @@ def takeover_conversation(
         state.status = HandoverStatus.HUMAN_ACTIVE
         state.taken_over_at = datetime.now(timezone.utc)
     db.commit()
+    HandoverService.mark_accepted(db, customer_id=customer_id, business_id=current_user.id)
     return {"status": state.status.value}
 
 
@@ -85,6 +87,7 @@ def resolve_conversation(
     state.status = HandoverStatus.RESOLVED
     state.resolved_at = datetime.now(timezone.utc)
     db.commit()
+    HandoverService.mark_resolved(db, customer_id=customer_id, business_id=current_user.id)
     return {"status": state.status.value}
 
 

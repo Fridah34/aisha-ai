@@ -1,10 +1,11 @@
-import uuid
 import re
+import uuid
 
 from app.ai import cache
 from app.ai.prompt_builder import build_system_prompt
 from app.ai.provider import get_ai_response
 from app.ai.token_utils import truncate_history_to_token_limit
+from app.handover import HandoverService
 from app.models import (
     Category,
     Conversation,
@@ -258,8 +259,7 @@ def save_message(
 def normalize_phone(phone_number: str) -> str:
     """Normalize WhatsApp phone numbers to consistent format."""
     phone = phone_number.strip()
-    if phone.startswith("whatsapp:"):
-        phone = phone[len("whatsapp:") :]
+    phone = phone.removeprefix("whatsapp:")
     phone = phone.strip()
     if not phone.startswith("+"):
         phone = "+" + phone
@@ -558,7 +558,10 @@ def process_customer_message(
     if needs_handover:
         state.status = HandoverStatus.NEEDS_HUMAN
         db.commit()
-        notify_handover(customer.id, business_id, message_text, urgency, db)
+        notify_handover(
+            customer.id, business_id, message_text, urgency, db,
+            conversation_id=state.id, ai_summary=clean,
+        )
 
     return {
         "response": clean,
@@ -577,22 +580,29 @@ def notify_handover(
     customer_message: str,
     urgency: str,
     db: Session,
+    *,
+    conversation_id: uuid.UUID,
+    ai_summary: str | None = None,
 ) -> None:
     """
-    Alerts when AISHA triggers a handover.
-    Logs to console. Dashboard picks up needs_human conversations via polling/websocket.
+    Creates the HandoverEvent audit row and dispatches notifications across
+    every channel the business has enabled (Dashboard/WhatsApp/Email), each
+    respecting its own configured delay. See app/handover/handover_service.py.
     """
-    user = db.query(User).filter(User.id == business_id).first()
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
-
     phone = customer.phone_number if customer else "unknown"
-    business = user.business_name if user else f"business {business_id}"
+    customer_name = customer.name if customer else None
 
-    print(
-        f"\n[HANDOVER {urgency.upper()}]\n"
-        f"Business : {business}\n"
-        f"Customer : {phone}\n"
-        f"Message  : {customer_message[:120]}\n"
+    HandoverService.create_event_and_notify(
+        db,
+        business_id=business_id,
+        conversation_id=conversation_id,
+        customer_id=customer_id,
+        customer_name=customer_name,
+        customer_phone=phone,
+        customer_last_message=customer_message,
+        ai_summary=ai_summary,
+        reason=f"[{urgency.upper()}] {customer_message[:200]}" if urgency else customer_message,
     )
 
 

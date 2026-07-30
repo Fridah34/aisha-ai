@@ -6,13 +6,13 @@ import re
 from collections.abc import AsyncGenerator, Generator
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-# Import centralized application settings
-from app.config import settings
-
 # Import database core engines and session managers
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+# Import centralized application settings
+from app.config import settings
 
 # ==============================================================================
 # LOGGING SETUP
@@ -195,4 +195,20 @@ def get_db() -> Generator[Session, None, None]:
     try:
         yield db
     finally:
-        db.close()
+        # This session may have been idle for the entire lifetime of an
+        # otherwise-async request (e.g. get_current_user only queries once,
+        # then this sync connection sits unused while the endpoint awaits
+        # async DB work). Neon's pooled endpoint can drop an idle connection
+        # server-side in that window, so the implicit ROLLBACK issued by
+        # close() can raise OperationalError ("SSL connection has been
+        # closed unexpectedly"). That happens during FastAPI's dependency
+        # teardown, i.e. inside the request/response cycle, so letting it
+        # propagate would turn an already-successful response into a 500.
+        try:
+            db.close()
+        except Exception:
+            logger.warning(
+                "Ignoring error while closing DB session (connection likely "
+                "already dropped by the server)",
+                exc_info=True,
+            )

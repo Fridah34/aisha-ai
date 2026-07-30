@@ -10,12 +10,15 @@ AUTH: business_id comes from the authenticated session (get_current_user), never
 """
 
 import uuid
-from typing import Optional
 
 from app.ai.cache import invalidate_business_cache
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.models import User
+from app.handover.schemas import (
+    HandoverNotificationSettings,
+    HandoverNotificationSettingsUpdate,
+)
+from app.models import DEFAULT_HANDOVER_NOTIFICATIONS, User
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -24,17 +27,19 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 
 
 class SettingsUpdate(BaseModel):
-    knowledge_base_text: Optional[str] = None
-    business_type: Optional[str] = None  # "retail" | "services" | "general"
-    delivery_location: Optional[str] = None
+    knowledge_base_text: str | None = None
+    business_type: str | None = None  # "retail" | "services" | "general"
+    delivery_location: str | None = None
+    handover_notifications: HandoverNotificationSettingsUpdate | None = None
 
 
 class SettingsResponse(BaseModel):
     id: uuid.UUID
     business_name: str
-    knowledge_base_text: Optional[str]
-    business_type: Optional[str]
-    delivery_location: Optional[str]  
+    knowledge_base_text: str | None
+    business_type: str | None
+    delivery_location: str | None
+    handover_notifications: HandoverNotificationSettings
 
     class Config:
         from_attributes = True
@@ -83,6 +88,15 @@ def update_settings(
                 status_code=400, detail=f"business_type must be one of: {valid_types}"
             )
         user.business_type = updates.business_type
+
+    if updates.handover_notifications is not None:
+        # Merge — a partial update (e.g. only `whatsapp`) must never wipe out
+        # the other channels' previously saved settings.
+        merged = {**DEFAULT_HANDOVER_NOTIFICATIONS, **(user.handover_notifications or {})}
+        incoming = updates.handover_notifications.model_dump(exclude_none=True)
+        for channel, channel_settings in incoming.items():
+            merged[channel] = channel_settings
+        user.handover_notifications = merged
 
     db.commit()
     db.refresh(user)
