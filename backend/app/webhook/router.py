@@ -8,6 +8,7 @@ from dotenv import find_dotenv, load_dotenv
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 load_dotenv(find_dotenv())
@@ -28,9 +29,8 @@ from app.ai.service import (  # noqa: E402
     process_customer_message,
     save_message,
 )
-from app.database import get_db  # noqa: E402
+from app.database import get_db, get_session  # noqa: E402
 from app.flows.marketplace_flow import (  # noqa: E402
-<<<<<<< HEAD
     add_item_to_cart,
     create_orders_from_cart,
     extract_order_ref,
@@ -45,6 +45,7 @@ from app.flows.marketplace_flow import (  # noqa: E402
     get_orders_by_reference,
     get_products_for_business_category,
     handle_marketplace_step,
+    is_business_question,
     is_checkout_command,
     is_human_handover_request,
     is_photo_request,
@@ -56,22 +57,14 @@ from app.flows.marketplace_flow import (  # noqa: E402
     reset_to_menu,
     resolve_product_choice,
     resolve_size_choice,
-=======
-    add_item_to_cart,create_orders_from_cart,extract_order_ref,format_cart_summary,
-    format_order_status,format_product_list_for_business,get_latest_orders_for_business,
-    get_latest_orders_for_customer,get_or_create_cart,get_or_create_marketplace_session,
-    get_orders_by_reference,get_products_for_business_category,handle_marketplace_step,is_checkout_command,
-    is_photo_request,is_status_command,is_switch_command,is_business_question,parse_name_and_contact,parse_quantity,
-    reset_after_checkout,reset_to_menu,resolve_product_choice,resolve_size_choice,friendly_status,
->>>>>>> 49b8aea80e0ae7325ce7d5d4455f993b8892ef5d
 )
-from app.models import Customer, HandoverStatus, Product, User  # noqa: E402
-from app.webhook.client import (  # noqa: E402
+from app.models import Customer, Product, User, HandoverStatus #noqa E402
+from app.webhook.client import (  #noqa E402
     send_browse_more_prompt,
     send_list_picker,
     send_text_message,
 )
-from app.webhook.parser import extract_message_data  # noqa: E402
+from app.webhook.parser import extract_message_data  #noqa E402
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -363,6 +356,7 @@ def _handle_deterministic_handover_request(
 async def receive_message(
     request: Request,
     db: Session = Depends(get_db),
+    async_db: AsyncSession = Depends(get_session),
 ):
     """
     Twilio calls this every time a customer sends a WhatsApp message.
@@ -751,9 +745,9 @@ async def receive_message(
             # doesn't manage cart state, so 'checkout' or another product name
             # still works normally on the customer's next message.
             if is_business_question(message_text):
-                result = process_customer_message(
+                result = await process_customer_message(
                     phone_number=customer_phone, message_text=message_text,
-                    business_id=business.id, db=db, profile_name=profile_name,
+                    business_id=business.id, db=db, async_db=async_db, profile_name=profile_name,
                 )
                 reply_text = result.get("response") or (
                     "Let me connect you with the team to check on that — they'll be with you shortly."
@@ -844,9 +838,9 @@ async def receive_message(
 
         # ── Process through AISHA's AI engine (only reached on fall-through) ──
         t_before_ai = time.time()
-        result = process_customer_message(
+        result = await process_customer_message(
             phone_number=customer_phone, message_text=message_text,
-            business_id=business.id, db=db, profile_name=profile_name,
+            business_id=business.id, db=db, async_db=async_db, profile_name=profile_name,
         )
         t_after_ai = time.time()
         print(f"[TIMING] AI call: {t_after_ai - t_before_ai:.2f}s")

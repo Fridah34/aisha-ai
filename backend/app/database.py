@@ -195,15 +195,7 @@ def get_db() -> Generator[Session, None, None]:
     try:
         yield db
     finally:
-        # This session may have been idle for the entire lifetime of an
-        # otherwise-async request (e.g. get_current_user only queries once,
-        # then this sync connection sits unused while the endpoint awaits
-        # async DB work). Neon's pooled endpoint can drop an idle connection
-        # server-side in that window, so the implicit ROLLBACK issued by
-        # close() can raise OperationalError ("SSL connection has been
-        # closed unexpectedly"). That happens during FastAPI's dependency
-        # teardown, i.e. inside the request/response cycle, so letting it
-        # propagate would turn an already-successful response into a 500.
+       
         try:
             db.close()
         except Exception:
