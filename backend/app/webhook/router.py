@@ -11,8 +11,6 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-load_dotenv(find_dotenv())
-
 from app.ai.cache import (
     already_sent_image,
     clear_active_business,
@@ -65,6 +63,10 @@ from app.webhook.client import (
     send_text_message,
 )
 from app.webhook.parser import extract_message_data
+
+load_dotenv(find_dotenv())
+
+
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
