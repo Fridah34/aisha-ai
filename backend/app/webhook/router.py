@@ -875,7 +875,7 @@ async def receive_message(
             print(f"[Webhook] Handover flagged for customer {customer_phone}")
         return Response(status_code=200)
 
-     except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"[Webhook] Unhandled error: {e}")
         return Response(status_code=200)
     
