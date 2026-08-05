@@ -13,14 +13,14 @@ from sqlalchemy.orm import Session
 
 load_dotenv(find_dotenv())
 
-from app.ai.cache import (  # noqa : E402
+from app.ai.cache import (
     already_sent_image,
     clear_active_business,
     get_active_business,
     mark_image_sent,
     set_active_business,
 )
-from app.ai.service import (  # noqa: E402
+from app.ai.service import (
     classify_handover_urgency,
     detect_language,
     get_or_create_conversation_state,
@@ -29,8 +29,8 @@ from app.ai.service import (  # noqa: E402
     process_customer_message,
     save_message,
 )
-from app.database import get_db, get_session  # noqa: E402
-from app.flows.marketplace_flow import (  # noqa: E402
+from app.database import get_db, get_session
+from app.flows.marketplace_flow import (
     add_item_to_cart,
     create_orders_from_cart,
     extract_order_ref,
@@ -58,13 +58,13 @@ from app.flows.marketplace_flow import (  # noqa: E402
     resolve_product_choice,
     resolve_size_choice,
 )
-from app.models import Customer, Product, User, HandoverStatus #noqa E402
-from app.webhook.client import (  #noqa E402
+from app.models import Customer, HandoverStatus, Product, User
+from app.webhook.client import (
     send_browse_more_prompt,
     send_list_picker,
     send_text_message,
 )
-from app.webhook.parser import extract_message_data  #noqa E402
+from app.webhook.parser import extract_message_data
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -875,7 +875,7 @@ async def receive_message(
             print(f"[Webhook] Handover flagged for customer {customer_phone}")
         return Response(status_code=200)
 
-    except Exception as e:
+     except Exception as e:  # noqa: BLE001
         print(f"[Webhook] Unhandled error: {e}")
         return Response(status_code=200)
     
