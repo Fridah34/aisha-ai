@@ -519,7 +519,7 @@ async def receive_message(
                         category_name=marketplace_session.selected_business_type,
                         db=db,
                     )
-                except Exception as side_effect_error:
+                except Exception as side_effect_error:  # noqa: BLE001
                     print(f"[Webhook] Post-store-entry side effect failed: {side_effect_error}")
 
             _send_marketplace_reply(customer_phone, reply_text, reply_items)

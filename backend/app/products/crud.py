@@ -7,9 +7,10 @@ spinning up an HTTP request.
 
 import uuid
 
+from sqlalchemy.orm import Session, joinedload
+
 from app.models import Product
 from app.products.schemas import ProductCreate, ProductUpdate
-from sqlalchemy.orm import Session, joinedload
 
 
 def get_products_for_business(db: Session, business_id: uuid.UUID) -> list[Product]:

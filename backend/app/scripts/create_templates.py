@@ -5,10 +5,11 @@ Content API.Run this manually whenever you need to create or recreate a template
 Usage: python scripts/create_templates.py
 """
 
-import requests
-import os
 import json
-from dotenv import load_dotenv, find_dotenv
+import os
+
+import requests
+from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 

@@ -8,6 +8,9 @@
 
 import os
 
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.orm import Session
+
 from app.auth.dependencies import get_current_user
 from app.auth.utils import (
     create_access_token,
@@ -26,8 +29,6 @@ from app.schema import (
     UserRegister,
     UserResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException,Request, Response, status
-from sqlalchemy.orm import Session
 
 # ===================ENVIRONMENT CONFIG====================
 # Cookies marked `secure=True` are only stored/sent by browsers over HTTPS.
@@ -81,7 +82,7 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         db.refresh(new_user)
         return {"user": UserResponse.model_validate(new_user)}
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         db.rollback()
         print("\n ACTUAL REGISTRATION ERROR:", str(e))
         import traceback
@@ -129,7 +130,7 @@ def register_google(user_data: UserGoogleRegister, db: Session = Depends(get_db)
         db.refresh(new_user)
 
         return new_user
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         db.rollback()  # undo any changes made during the creation process
         print("\n ACTUAL REGISTRATION ERROR:", str(e))
         import traceback

@@ -1,5 +1,6 @@
 import os
 import time
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,7 +38,7 @@ def _init_vertexai():
     print("[AISHA] Vertex AI initialized")
 
 
-def _get_gemini_model(system_instruction: str = None):
+def _get_gemini_model(system_instruction: str | None = None):
     """Get or create a Gemini model instance with the given system prompt."""
     from vertexai.generative_models import GenerativeModel
 
@@ -87,7 +88,7 @@ def _get_claude_client():
 
 
 # ─── MAIN ENTRY POINT ──────────────────────────────────────────────────────
-def get_ai_response(prompt: str, conversation_history: list = None) -> str:
+def get_ai_response(prompt: str, conversation_history: list | None = None) -> str:
     """
     Get AI response with automatic fallback and provider caching.
     """
@@ -111,7 +112,7 @@ def get_ai_response(prompt: str, conversation_history: list = None) -> str:
         print(f"[AISHA] {AI_PROVIDER.upper()} response in {elapsed:.2f}s")
         return response
 
-    except Exception as primary_error:
+    except Exception as primary_error:  # noqa: BLE001
         print(f"[AISHA] Primary AI provider '{AI_PROVIDER}' failed: {primary_error}")
 
         # Auto-fallback to Groq if primary fails
@@ -122,7 +123,7 @@ def get_ai_response(prompt: str, conversation_history: list = None) -> str:
                 elapsed = time.time() - start_time
                 print(f"[AISHA] GROQ fallback response in {elapsed:.2f}s")
                 return response
-            except Exception as fallback_error:
+            except Exception as fallback_error:  # noqa: BLE001
                 print(f"[AISHA] Groq fallback also failed: {fallback_error}")
 
         return (
@@ -200,7 +201,7 @@ def _call_groq(prompt: str, conversation_history: list) -> str:
 
 
 # ─── PROVIDER HEALTH CHECK ────────────────────────────────────────────────
-def check_provider_health(provider: str = None) -> dict:
+def check_provider_health(provider: str | None = None) -> dict:
     """
     Check if a provider is healthy and responding.
     Useful for monitoring and debugging.
@@ -244,7 +245,7 @@ def check_provider_health(provider: str = None) -> dict:
                     "latency_ms": int((time.time() - start) * 1000),
                     "response_preview": response.content[0].text[:50],
                 }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             results[p] = {"healthy": False, "error": str(e)}
 
     return results

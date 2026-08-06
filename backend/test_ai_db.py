@@ -2,7 +2,7 @@ import asyncio
 
 from app import models
 from app.ai.service import process_customer_message
-from app.database import SessionLocal, engine, async_session_factory
+from app.database import SessionLocal, async_session_factory, engine
 
 # Create tables if they don't exist
 models.Base.metadata.create_all(bind=engine)

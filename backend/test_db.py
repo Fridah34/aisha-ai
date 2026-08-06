@@ -1,17 +1,18 @@
 import sys
 import uuid
 
-import app.schema as schema
-from app.database import Base, SessionLocal, engine
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app import schema
+from app.database import Base, SessionLocal, engine
 
 print("Step 1: Initiating database schema synchronization...")
 try:
     # This reads your models.py and builds the actual tables in PostgreSQL!
     Base.metadata.create_all(bind=engine)
     print(" Database tables created successfully inside PostgreSQL!")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(
         " CRITICAL ERROR: Table creation failed. Check your models.py attributes or relationship fields!"
     )
@@ -32,7 +33,7 @@ try:
     print(
         f"Schema validation passed! Parsed text language: '{validated_schema.language.value}'"
     )
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(
         "CRITICAL ERROR: Pydantic schema instantiation failed. Check your schemas.py declarations!"
     )

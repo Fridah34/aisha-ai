@@ -1,13 +1,13 @@
 import asyncio
 import json
 import uuid
-from typing import Dict, Set
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from sqlalchemy.orm import Session
 
 from app.auth.utils import verify_access_token
 from app.database import get_db
 from app.models import User
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["WebSocket"])
 
@@ -15,7 +15,7 @@ router = APIRouter(tags=["WebSocket"])
 # Store active connections
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[uuid.UUID, Set[WebSocket]] = {}
+        self.active_connections: dict[uuid.UUID, set[WebSocket]] = {}
 
     def disconnect(self, websocket: WebSocket, business_id: uuid.UUID):
         if business_id in self.active_connections:
@@ -31,7 +31,7 @@ class ConnectionManager:
             for connection in self.active_connections[business_id]:
                 try:
                     await connection.send_text(message_json)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Failed to send message: {e}")
                     dead_connections.append(connection)
 
@@ -128,14 +128,14 @@ async def websocket_endpoint(
             except WebSocketDisconnect:
                 print(f"WebSocket disconnect detected for business {business_id}")
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Error in WebSocket loop for business {business_id}: {e}")
                 break
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, business_id)
         print(f"Business {business_id} disconnected")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"WebSocket error for business {business_id}: {e}")
         manager.disconnect(websocket, business_id)
 

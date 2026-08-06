@@ -8,7 +8,6 @@ Keeping them separate means we can change the Db without breaking the API, and v
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,28 +17,28 @@ class ProductCreate(BaseModel):
     # sent by the client. The router injects it from the authenticated
     # user before the product is persisted (see products/router.py).
     name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: str | None = None
     price: Decimal = Field(..., gt=0)
     is_available: bool = True
-    category_id: Optional[uuid.UUID] =None 
-    variant_label: Optional[str] = None
-    variant_options: Optional[str] = None
-    unit: Optional[str] = None
-    image_url: Optional[str] = None
-    upsell_text: Optional[str] = None
+    category_id: uuid.UUID | None =None 
+    variant_label: str | None = None
+    variant_options: str | None = None
+    unit: str | None = None
+    image_url: str | None = None
+    upsell_text: str | None = None
 
 
 class ProductUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = None
-    price: Optional[Decimal] = Field(None, gt=0)
-    is_available: Optional[bool] = None
-    category_id: Optional[uuid.UUID] = None
-    variant_label: Optional[str] = None
-    variant_options: Optional[str] = None
-    unit: Optional[str] = None
-    image_url: Optional[str] = None
-    upsell_text: Optional[str] = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = None
+    price: Decimal | None = Field(None, gt=0)
+    is_available: bool | None = None
+    category_id: uuid.UUID | None = None
+    variant_label: str | None = None
+    variant_options: str | None = None
+    unit: str | None = None
+    image_url: str | None = None
+    upsell_text: str | None = None
 
 
 class ProductResponse(BaseModel):
@@ -51,17 +50,17 @@ class ProductResponse(BaseModel):
     id: uuid.UUID
     business_id: uuid.UUID
     name: str
-    description: Optional[str]
+    description: str | None
     price: Decimal
     is_available: bool
-    category_id: Optional[uuid.UUID] = None
-    variant_label: Optional[str] = None
-    variant_options: Optional[str] = None
-    unit: Optional[str] = None
-    image_url: Optional[str] = None
-    upsell_text: Optional[str] = None
+    category_id: uuid.UUID | None = None
+    variant_label: str | None = None
+    variant_options: str | None = None
+    unit: str | None = None
+    image_url: str | None = None
+    upsell_text: str | None = None
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
 
     model_config = ConfigDict(
         from_attributes=True

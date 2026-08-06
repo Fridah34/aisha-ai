@@ -40,7 +40,7 @@ async def test_websocket():
         print(f"❌ Connection closed: {e}")
     except ConnectionRefusedError:
         print("❌ Connection refused. Is FastAPI running?")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Error: {e}")
         print(f"Error type: {type(e)}")
 

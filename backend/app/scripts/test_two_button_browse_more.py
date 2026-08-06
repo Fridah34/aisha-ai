@@ -18,11 +18,12 @@ Usage:
     python app/scripts/test_two_button_browse_more.py
 """
 
-import os
 import json
+import os
+
 import requests
+from dotenv import find_dotenv, load_dotenv
 from twilio.rest import Client
-from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 

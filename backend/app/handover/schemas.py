@@ -13,8 +13,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from app.models import HandoverEventStatus, HandoverReasonCode
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.models import HandoverEventStatus, HandoverReasonCode
 
 
 class HandoverChannelSettings(BaseModel):

@@ -3,7 +3,6 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-from app.auth.utils import is_password_strong
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -12,6 +11,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from app.auth.utils import is_password_strong
 
 
 class OrderStatus(str, Enum):

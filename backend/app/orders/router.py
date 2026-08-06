@@ -10,14 +10,20 @@ come exclusively from the WhatsApp checkout flow
 
 import uuid
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
 from app.auth.dependencies import get_current_user
 from app.database import get_db
+from app.flows.marketplace_flow import (
+    notify_cancelled,
+    notify_delivered,
+    notify_payment_received,
+    notify_shipping,
+)
 from app.models import OrderStatus, User
 from app.orders import crud
 from app.orders.schemas import OrderGroupResponse, OrderItemResponse, OrderStatusUpdate
-from fastapi import APIRouter, Depends, HTTPException
-from app.flows.marketplace_flow import notify_shipping, notify_payment_received, notify_delivered, notify_cancelled
-from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 

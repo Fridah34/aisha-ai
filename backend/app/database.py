@@ -179,7 +179,6 @@ engine = sync_engine
 
 class Base(DeclarativeBase):
     """Modern DeclarativeBase subclass mapping python models to database tables cleanly."""
-    pass
 
 
 # ==============================================================================

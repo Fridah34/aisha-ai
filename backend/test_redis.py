@@ -1,5 +1,6 @@
-import redis
 import os
+
+import redis
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,7 +17,7 @@ try:
     redis_client.ping()
     print("Redis connected successfully")
     REDIS_AVAILABLE = True
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     print(f"Redis not available: {e} — running without cache")
     REDIS_AVAILABLE = False
     redis_client = None

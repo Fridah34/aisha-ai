@@ -1,6 +1,10 @@
 import re
 import uuid
 
+from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
 from app.ai import cache
 from app.ai.provider import get_ai_response
 from app.ai.token_utils import truncate_history_to_token_limit
@@ -17,9 +21,6 @@ from app.models import (
     Product,
     User,
 )
-from sqlalchemy import func
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 SWITCH_HINT = "\n\n_Reply 'menu' to browse other stores anytime._"
 

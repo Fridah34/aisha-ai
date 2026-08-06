@@ -11,6 +11,10 @@ AUTH: business_id comes from the authenticated session (get_current_user), never
 
 import uuid
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from app.ai.cache import invalidate_business_cache
 from app.auth.dependencies import get_current_user
 from app.database import get_db
@@ -19,9 +23,6 @@ from app.handover.schemas import (
     HandoverNotificationSettingsUpdate,
 )
 from app.models import DEFAULT_HANDOVER_NOTIFICATIONS, User
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 

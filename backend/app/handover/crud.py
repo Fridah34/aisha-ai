@@ -9,8 +9,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from app.models import HandoverEvent, HandoverEventStatus, HandoverReasonCode
 from sqlalchemy.orm import Session
+
+from app.models import HandoverEvent, HandoverEventStatus, HandoverReasonCode
 
 
 def create_event(

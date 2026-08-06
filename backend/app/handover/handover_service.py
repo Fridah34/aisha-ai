@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy.orm import Session
+
 from app.handover import crud
 from app.handover.notification_service import NotificationService
 from app.handover.reason_codes import classify_handover_reason
 from app.models import HandoverEvent, HandoverEventStatus, User
-from sqlalchemy.orm import Session
 
 _notification_service = NotificationService()
 

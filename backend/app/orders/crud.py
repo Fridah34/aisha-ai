@@ -8,9 +8,10 @@ categories/crud.py owning display_order computation.
 import itertools
 from uuid import UUID
 
-from app.models import Order
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+
+from app.models import Order
 
 
 def get_orders_for_business(db: Session, business_id: UUID) -> list[Order]:

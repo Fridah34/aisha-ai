@@ -2,6 +2,9 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import String, func
+from sqlalchemy.orm import Session
+
 from app.models import (
     Cart,
     Category,
@@ -13,8 +16,6 @@ from app.models import (
 )
 from app.utils import to_e164
 from app.webhook.client import send_text_message
-from sqlalchemy import String, func
-from sqlalchemy.orm import Session
 
 # How long a customer's mid-flow state (e.g. "awaiting_size") stays valid
 # before we treat it as abandoned and reset them to the top-level menu.
@@ -701,8 +702,10 @@ def handle_marketplace_step(
         )
         if product is None:
             return (
-                "Sorry, I didn't recognize that product. Please reply with a "
-                "product name from the list above, or 'menu' to start over.",
+                (
+                    "Sorry, I didn't recognize that product. Please reply with a "
+                    "product name from the list above, or 'menu' to start over."
+                ),
                 None,
             )
 
