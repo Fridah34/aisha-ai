@@ -19,7 +19,7 @@ try:
     redis_client.ping()
     print("Redis Connected successfully")
     REDIS_AVAILABLE = True
-except Exception as e:
+except Exception as e: # noqa: BLE001
     print(f"Redis not available: {e} - running without cache")
     REDIS_AVAILABLE = False
     redis_client = None
@@ -54,7 +54,7 @@ def get_cached_business_prompt(business_id: uuid.UUID):
     try:
         key = f"business_prompt:{business_id}"
         return redis_client.get(key)
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"Redis read error: {e}")
         return None
 
@@ -70,7 +70,7 @@ def cache_business_prompt(business_id: uuid.UUID, prompt: str, ttl_seconds: int 
     try:
         key = f"business_prompt:{business_id}"
         redis_client.setex(key, ttl_seconds, prompt)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Redis write error: {e}")
 
 
@@ -89,7 +89,7 @@ def invalidate_business_cache(business_id: uuid.UUID):
         key = f"business_prompt:{business_id}"
         redis_client.delete(key)
         print(f"✓ Cache invalidated for business {business_id}")
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"Redis delete error: {e}")
 
 
@@ -107,7 +107,7 @@ def invalidate_conversation_cache(
         print(
             f"Conversation cache cleared: customer {customer_id} / business {business_id}"
         )
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"Redis delete error: {e}")
 
 
@@ -134,7 +134,7 @@ def get_cached_conversation(customer_id: uuid.UUID, business_id: uuid.UUID):
         if data:
             return json.loads(data)
         return None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Redis conversation read error: {e}")
         return None
 
@@ -155,7 +155,7 @@ def cache_conversation(
         key = f"conv:{business_id}:{customer_id}"
         recent = history[-10:] if len(history) > 10 else history
         redis_client.setex(key, ttl_seconds, json.dumps(recent))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Redis conversation write error: {e}")
 
 
@@ -178,7 +178,7 @@ def already_sent_image(
 
         return bool(exists)
 
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"[Redis] Image check error: {e}")
         return False
 
@@ -200,7 +200,7 @@ def mark_image_sent(
         key = f"img_sent:{business_id}:{customer_id}:{product_id}"
         redis_client.setex(key, ttl_seconds, "1")
         print(f"[Redis] Image marked as sent: {key}")
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"[Redis] Image mark error: {e}")
 
 
@@ -221,7 +221,7 @@ def append_to_conversation_cache(
         existing = get_cached_conversation(customer_id, business_id) or []
         existing.append(message)
         cache_conversation(customer_id, business_id, existing, ttl_seconds)
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"Redis append error: {e}")
 
 
@@ -243,7 +243,7 @@ def get_active_business(customer_phone: str):
     try:
         key = f"active_biz:{customer_phone}"
         return redis_client.get(key)
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"Redis active business read error: {e}")
         return None
 
@@ -257,7 +257,7 @@ def set_active_business(
     try:
         key = f"active_biz:{customer_phone}"
         redis_client.setex(key, ttl_seconds, str(business_id))
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         print(f"Redis active business write error: {e}")
 
 
@@ -268,5 +268,5 @@ def clear_active_business(customer_phone: str) -> None:
     try:
         key = f"active_biz:{customer_phone}"
         redis_client.delete(key)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Redis active business delete error: {e}")
