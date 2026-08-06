@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from pydantic import ValidationError
+
 from app.handover.reason_codes import classify_handover_reason, reason_label
 from app.handover.schemas import (
     HandoverChannelSettings,
@@ -16,7 +18,6 @@ from app.handover.schemas import (
 )
 from app.handover.utils import format_waiting_duration
 from app.models import HandoverReasonCode
-from pydantic import ValidationError
 
 
 class TestClassifyHandoverReason:
