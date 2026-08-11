@@ -20,7 +20,7 @@ from app.websocket.router import router as websocket_router
 #Base.metadata.drop_all(bind=engine)
 #Base.metadata.create_all(bind=engine)
 
-print("DB HOST:", os.getenv("DATABASE_URL"))
+print("Database configuration loaded.")
 
 app = FastAPI(
     title="AISHA AI",
