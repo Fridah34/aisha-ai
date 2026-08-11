@@ -47,7 +47,67 @@ BUSINESS_QUESTION_KEYWORDS = (
     # delivery / shipping coverage
     "where do you deliver", "do you deliver", "deliver to", "delivery area",
     "where do you guys deliver", "shipping to",
+
+    # hours of operation
+    "what time", "opening hours", "operating hours", "business hours",
+    "closing time", "open until", "still open", "are you open",
+    "when do you open", "when do you close", "what time do you open",
+    "what time do you close", "your hours",
 )
+
+QUESTION_STARTERS = (
+    "do you", "does it", "does he", "does she",
+    "is there", "is it", "is that", "is this",
+    "are you", "are there",
+    "can i", "can you", "could i", "could you", "will you", "would you",
+    "what", "where", "when", "why", "how", "which", "who",
+)
+
+
+def looks_like_question(message: str) -> bool:
+    """Loose, catch-all 'this is probably a question, not a menu
+    selection' check — deliberately broader than is_business_question().
+
+    SAFE TO USE ONLY once a business is already selected (i.e. from
+    router.py's post-selection states: awaiting_product_choice,
+    awaiting_photo_choice, awaiting_size, awaiting_quantity,
+    awaiting_cart_action, awaiting_checkout_info). Before a store is
+    picked (select_need / select_business in this file), the stricter
+    is_business_question() keyword list is what protects against
+    answering from the wrong business's catalog — this function must not
+    be used there.
+
+    Exists because BUSINESS_QUESTION_KEYWORDS will never fully enumerate
+    every real phrasing a customer uses ("you guys open?", "still open
+    today?", "opening time?"...). This catches those by shape ("starts
+    with a question word", "ends with a question mark") rather than by
+    exact phrase, at the cost of occasionally sending an AI call for a
+    message that turns out to be junk — a far cheaper failure than
+    silently telling a real customer 'sorry, I didn't understand'.
+    """
+    text = message.strip().lower()
+    if not text:
+        return False
+    if text.endswith("?"):
+        return True
+    return text.startswith(QUESTION_STARTERS)
+
+
+def is_business_question(message: str) -> bool:
+    """Catches questions only the business itself can answer — stock/variant
+    availability, store location, delivery coverage — so they route to a
+    human handover instead of the generic 'didn't recognize that' fallback.
+    Deliberately keyword-based, not AI-routed: keeps this state fully
+    deterministic like every other awaiting_* branch (see
+    _send_fallback_reply's docstring above), at the cost of needing this
+    list extended by hand as new phrasings turn up in real conversations.
+
+    Used on its own (without looks_like_question) in select_need /
+    select_business, where no business is selected yet and a wrong guess
+    here has no safe fallback. Used together with looks_like_question()
+    everywhere else, in router.py, once a business_id is locked in."""
+    text = message.strip().lower()
+    return any(kw in text for kw in BUSINESS_QUESTION_KEYWORDS)
 
 
 def friendly_status(status_value: str) -> str:
@@ -184,6 +244,34 @@ def get_categories_for_business(db: Session, business_id: uuid.UUID) -> list[Cat
     )
 
 
+def get_category_id_for_business(
+    db: Session,
+    business_id: uuid.UUID,
+    category_name: str,
+) -> uuid.UUID | None:
+    """Resolves (business_id, category_name) -> category_id.
+
+    Pulled out as its own function rather than left inline because two
+    separate call sites now need this exact lookup: get_products_for_business_category
+    below, and message_processor.py's _resolve_photo_target (which needs
+    the id to check whether a candidate "last viewed product" fallback
+    actually belongs to the category the customer is currently browsing,
+    rather than trusting a stale id from an earlier, unrelated shopping
+    session). One function means both stay in sync if the lookup logic
+    (e.g. is_active filtering) ever changes.
+    """
+    category = (
+        db.query(Category)
+        .filter(
+            Category.business_id == business_id,
+            Category.name == category_name,
+            Category.is_active,
+        )
+        .first()
+    )
+    return category.id if category else None
+
+
 def get_products_for_category(
     db: Session,
     business_id: uuid.UUID,
@@ -205,18 +293,10 @@ def get_products_for_business_category(
     business_id: uuid.UUID,
     category_name: str,
 ) -> list[Product]:
-    category = (
-        db.query(Category)
-        .filter(
-            Category.business_id == business_id,
-            Category.name == category_name,
-            Category.is_active,
-        )
-        .first()
-    )
-    if not category:
+    category_id = get_category_id_for_business(db, business_id, category_name)
+    if not category_id:
         return []
-    return get_products_for_category(db, business_id, category.id)
+    return get_products_for_category(db, business_id, category_id)
 
 
 def _format_product_list(products: list[Product]) -> str:
@@ -251,12 +331,60 @@ def resolve_product_choice(
     if choice is not None:
         return next((p for p in products if p.name.strip() == choice), None)
 
+    # FIXED: this used to check `text_clean in p.name.lower()` — i.e.
+    # "is the customer's whole message a substring of the product name".
+    # That's backwards and near-dead-code: a sentence like "can i see a
+    # photo of the crocs?" can never be a substring of "Crocs". What we
+    # actually want is the reverse — does the (short) product name appear
+    # SOMEWHERE inside the (longer) customer message.
     text_clean = message.strip().lower()
     if text_clean:
-        partial_matches = [p for p in products if text_clean in p.name.strip().lower()]
+        partial_matches = [
+            p for p in products if p.name.strip().lower() in text_clean
+        ]
         if len(partial_matches) == 1:
             return partial_matches[0]
+        if len(partial_matches) > 1:
+            # More than one product's name appears in the message (e.g.
+            # message mentions "crocs" and both "Crocs" and "Platform
+            # crocs" match). Prefer the longest/most specific name — a
+            # message containing "platform crocs" should resolve to
+            # "Platform crocs", not fall back to the shorter "Crocs" that
+            # also happens to be a substring of it.
+            partial_matches.sort(key=lambda p: len(p.name), reverse=True)
+            return partial_matches[0]
 
+    return None
+
+def _resolve_photo_target(marketplace_session, business_id: uuid.UUID, message_text: str, db: Session) -> Product | None:
+    matched_product = resolve_product_choice(
+        business_id=business_id, category_name=marketplace_session.selected_business_type,
+        message=message_text, db=db,
+    )
+    if matched_product:
+        return matched_product
+    if not marketplace_session.last_product_id:
+        return None
+    is_fresh = (datetime.now(timezone.utc) - marketplace_session.updated_at) < STALE_PHOTO_WINDOW
+    if not is_fresh:
+        return None
+
+    last_product = db.query(Product).filter(Product.id == marketplace_session.last_product_id).first()
+    if not last_product:
+        return None
+
+    # Only trust the "last viewed product" guess if it actually belongs
+    # to the category the customer is currently browsing. Without this,
+    # a stale last_product_id from an earlier, unrelated shopping session
+    # (different category, possibly hours ago but still inside the 24h
+    # freshness window) could get silently substituted for whatever the
+    # customer is asking about now — which is exactly what caused Carpet
+    # to get matched to a Crocs photo request.
+    current_category_id = get_category_id_for_business(
+        db, business_id, marketplace_session.selected_business_type
+    )
+    if current_category_id and last_product.category_id == current_category_id:
+        return last_product
     return None
 
 
@@ -280,9 +408,61 @@ def resolve_size_choice(text: str, variant_options: str) -> str | None:
     for s in sizes:
         if re.search(rf"\b{re.escape(s.lower())}\b", text_clean):
             return s
+        
+    #Size labels like "38 - 40" describe a numeric range. A bare
+    # number reply ("38") should resolve to whichever range contains
+    # it, since no real customer will retype " 38 -40 " verbatim.
+    if text_clean.isdigit ():
+        num = int(text_clean)
+        for s in sizes:
+            m = re.match(r"(\d+)\s*-\s*(\d+)", s)
+            if m:
+                lo, hi = int(m.group(1)), int(m.group(2))
+                if lo <= num <= hi:
+                    return s
 
     return None
 
+def find_mentioned_alternate_variant(
+    message: str,
+    business_id: uuid.UUID,
+    category_name: str,
+    current_product_options: str,
+    db: Session,
+) -> str | None:
+    """Checks whether the customer's message mentions a variant term that
+    genuinely exists somewhere in THIS business's catalog for this category
+    (color, size, flavor — whatever that business actually uses) but isn't
+    available on the CURRENT product.
+
+    Deliberately data-driven, not a hardcoded word list: AISHA serves
+    several different business types, each with its own variant vocabulary
+    (a boutique's variants are colors/sizes, a food business's might be
+    flavors or portion sizes) — a fixed list of English color words would
+    only ever be correct for one type of business and would silently claim
+    a business "doesn't have" something it never claimed to sell.
+
+    Returns the matched term (as it appears in the catalog) if found, else
+    None. None also covers "no match" for a genuinely unrelated message
+    (e.g. a business-hours question) — callers should check
+    is_business_question() separately for those.
+    """
+    current_available = {s.strip().lower() for s in _parse_sizes(current_product_options)}
+
+    products = get_products_for_business_category(db, business_id, category_name)
+    catalog_terms: set[str] = set()
+    for p in products:
+        if p.variant_options:
+            catalog_terms.update(s.strip().lower() for s in _parse_sizes(p.variant_options))
+
+    text_clean = message.strip().lower()
+    for term in catalog_terms:
+        if term in current_available:
+            continue  # it IS available on this product — not a mismatch
+        if re.search(rf"\b{re.escape(term)}\b", text_clean):
+            return term
+
+    return None
 
 def parse_quantity(text: str) -> int | None:
     text_clean = text.strip()
@@ -297,14 +477,14 @@ def add_item_to_cart(
     cart: Cart, product: Product, size: str | None, qty: int, db: Session
 ) -> None:
     items = list(cart.items or [])
-    
+
     for item in items:
         if item["product_id"] == str(product.id) and item.get("size") == size:
             item["qty"] += qty
             cart.items = items
             db.commit()
             return
-        
+
     items.append(
         {
             "product_id": str(product.id),
@@ -419,18 +599,6 @@ def get_latest_orders_for_business(
         return [latest]
     return db.query(Order).filter(Order.order_group_id == latest.order_group_id).all()
 
-def is_business_question(message: str) -> bool:
-    """Catches questions only the business itself can answer — stock/variant
-    availability, store location, delivery coverage — so they route to a
-    human handover instead of the generic 'didn't recognize that' fallback.
-    Deliberately keyword-based, not AI-routed: keeps this state fully
-    deterministic like every other awaiting_* branch (see
-    _send_fallback_reply's docstring above), at the cost of needing this
-    list extended by hand as new phrasings turn up in real conversations."""
-    text = message.strip().lower()
-    return any(kw in text for kw in BUSINESS_QUESTION_KEYWORDS)
-
-
 def format_order_status(orders: list[Order]) -> str:
     if not orders:
         return (
@@ -505,7 +673,7 @@ def notify_delivered(order: Order, business: User, db: Session) -> None:
         "Thanks for shopping with us — reply 'menu' anytime to shop again."
     )
     _send_status_notification(order, message)
-    
+
 def notify_cancelled(order: Order, business: User, db: Session, was_paid: bool) -> None:
     """was_paid reflects the item's status *before* cancellation — passed
     in by the caller rather than inferred here, since by the time this
@@ -527,8 +695,8 @@ def notify_cancelled(order: Order, business: User, db: Session, was_paid: bool) 
         "_Reply 'status' anytime to see all your items, or 'menu' to shop again._"
     )
     _send_status_notification(order, message)
-    
-    
+
+
 
 def handle_marketplace_step(
     session: MarketplaceSession, message: str, db: Session
@@ -570,6 +738,13 @@ def handle_marketplace_step(
             return "What are you looking for today?", next_page
 
         if choice is None:
+            if is_business_question(message):
+                return (
+                    "That sounds like a question for a specific store — "
+                    "pick a category below first, then the store, and "
+                    "I'll help you get an answer.",
+                    _menu_items_for_offset(titled_categories, _get_offset(session)),
+                )
             return "Sorry, please reply with a number from the list above.", None
 
         matched_category = next(c for c in categories if c.title() == choice)
@@ -597,6 +772,12 @@ def handle_marketplace_step(
             return "Here are stores for you:", next_page
 
         if choice is None:
+            if is_business_question(message):
+                return (
+                    "That's worth asking — pick a store below and I can "
+                    "help answer it, or connect you with them directly.",
+                    _menu_items_for_offset(store_names, _get_offset(session)),
+                )
             return "Sorry, please reply with a number from the list above.", None
 
         chosen = next(b for b in businesses if b.business_name.strip() == choice)
@@ -618,16 +799,6 @@ def handle_marketplace_step(
                 "something else? Reply 'menu' to browse other stores."
             )
         elif has_photos:
-            # Was previously products[:5]-truncated in the welcome TEXT
-            # (separate from the 5-photo cap in router.py's
-            # _send_product_photos, which is intentional and unrelated).
-            # That silently hid any product past the 5th — a category with
-            # 8 hair clip variants only ever mentioned 5 by name, so a
-            # customer could never ask for the other 3 by name since they
-            # were never told those names existed. Now reuses the same
-            # full-listing helper the other two welcome branches already
-            # use, so every product in the category is named regardless
-            # of how many photos get auto-sent alongside it.
             product_text = format_product_list_for_business(
                 db, chosen.id, session.selected_business_type
             )

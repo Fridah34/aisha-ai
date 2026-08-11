@@ -49,3 +49,23 @@ class ConversationThread(BaseModel):
     customer_name: Optional[str]
     conversation_status: str
     messages: list[MessageResponse]
+
+
+class HandoverEventOut(BaseModel):
+    """
+    One AI→human escalation event, as returned by
+    GET /conversations/{customer_id}/handover-history.
+    resolved_at is None while the escalation is still open —
+    the dashboard uses that to separate "needs attention now"
+    from "already dealt with" in the same list.
+    """
+
+    id: uuid.UUID
+    trigger_message: str
+    reason: str
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+    
+    
