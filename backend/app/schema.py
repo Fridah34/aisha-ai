@@ -2,9 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import List, Optional
 
-from app.auth.utils import is_password_strong
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -13,6 +11,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from app.auth.utils import is_password_strong
 
 
 class OrderStatus(str, Enum):
@@ -142,10 +142,10 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     name: str
     email: EmailStr
-    business_name: Optional[str] = None
+    business_name: str | None = None
     is_active: bool
-    google_id: Optional[str] = None
-    created_at: Optional[datetime] = None
+    google_id: str | None = None
+    created_at: datetime | None = None
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -191,9 +191,9 @@ class TokenResponse(BaseModel):
 
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
+    description: str | None = Field(None, max_length=1000)
     price: Decimal = Field(..., gt=0, decimal_places=2)
-    is_available: Optional[bool] = True
+    is_available: bool | None = True
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -208,10 +208,10 @@ class ProductCreate(BaseModel):
 
 
 class ProductUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    price: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
-    is_available: Optional[bool] = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=1000)
+    price: Decimal | None = Field(None, gt=0, decimal_places=2)
+    is_available: bool | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -229,7 +229,7 @@ class ProductResponse(BaseModel):
     id: uuid.UUID
     business_id: uuid.UUID
     name: str
-    description: Optional[str]
+    description: str | None
     price: float
     is_available: bool
     created_at: datetime
@@ -258,9 +258,9 @@ class ProductResponse(BaseModel):
 class CustomerResponse(BaseModel):
     id: uuid.UUID
     phone_number: str
-    name: Optional[str]
+    name: str | None
     is_active: bool
-    deleted_at: Optional[datetime]
+    deleted_at: datetime | None
     first_seen: datetime
     last_seen: datetime
 
@@ -327,7 +327,7 @@ class ConversationResponse(BaseModel):
 
 class ConversationHistoryResponse(BaseModel):
     customer_id: uuid.UUID
-    messages: List[ConversationResponse]
+    messages: list[ConversationResponse]
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -336,9 +336,9 @@ class ConversationHistoryResponse(BaseModel):
 
 
 class OrderCreate(BaseModel):
-    customer_id: Optional[uuid.UUID] = None
-    product_id: Optional[uuid.UUID] = None
-    business_id: Optional[uuid.UUID] = None
+    customer_id: uuid.UUID | None = None
+    product_id: uuid.UUID | None = None
+    business_id: uuid.UUID | None = None
     quantity: int = Field(..., gt=0)
     total_amount: Decimal = Field(..., gt=0, decimal_places=2)
     status: OrderStatus = Field(default=OrderStatus.PENDING)
@@ -365,20 +365,20 @@ class OrderUpdate(BaseModel):
 
 class OrderResponse(BaseModel):
     id: uuid.UUID
-    customer_id: Optional[uuid.UUID]
-    product_id: Optional[uuid.UUID]
-    business_id: Optional[uuid.UUID]
+    customer_id: uuid.UUID | None
+    product_id: uuid.UUID | None
+    business_id: uuid.UUID | None
     quantity: int
     total_amount: float
     status: OrderStatus
     created_at: datetime
     updated_at: datetime
 
-    snapshot_customer_name: Optional[str]
-    snapshot_customer_phone: Optional[str]
-    snapshot_product_name: Optional[str]
-    snapshot_product_price: Optional[float]
-    snapshot_business_name: Optional[str]
+    snapshot_customer_name: str | None
+    snapshot_customer_phone: str | None
+    snapshot_product_name: str | None
+    snapshot_product_price: float | None
+    snapshot_business_name: str | None
 
     model_config = ConfigDict(
         from_attributes=True,

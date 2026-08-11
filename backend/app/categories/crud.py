@@ -1,9 +1,10 @@
 import uuid
 
-from app.categories.schemas import CategoryCreate, CategoryUpdate
-from app.models import Category, Product
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from app.categories.schemas import CategoryCreate, CategoryUpdate
+from app.models import Category, Product
 
 
 def get_categories_for_business(db: Session, business_id: uuid.UUID) -> list[dict]:

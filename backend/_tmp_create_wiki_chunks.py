@@ -1,7 +1,8 @@
 import asyncio
 
-from app.database import async_session_factory
 from sqlalchemy import text
+
+from app.database import async_session_factory
 
 STATEMENTS = [
     "CREATE EXTENSION IF NOT EXISTS pgcrypto;",

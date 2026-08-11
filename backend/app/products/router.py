@@ -7,14 +7,16 @@ AUTH: business_id comes from the authenticated session (get_current_user), never
 import os
 import uuid
 
+import aiofiles
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
+
 from app.ai.cache import invalidate_business_cache
 from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models import Product, User
 from app.products import crud
 from app.products.schemas import ProductCreate, ProductResponse, ProductUpdate
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -100,7 +102,6 @@ def remove_product(
 
     crud.delete_product(db, product)
     invalidate_business_cache(current_user.id)
-    return None
 
 
 @router.post("/{product_id}/image")
@@ -141,8 +142,8 @@ async def upload_product_image(
     os.makedirs(folder, exist_ok=True)
     filepath = f"{folder}/{filename}"
 
-    with open(filepath, "wb") as f:
-        f.write(contents)
+    async with aiofiles.open(filepath, "wb") as f:
+        await f.write(contents)
 
     # Save URL to DB
     product = (

@@ -7,15 +7,16 @@ AUTH: business_id comes from the authenticated session (get_current_user), never
 
 import uuid
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
 from app.ai.cache import invalidate_business_cache
 from app.auth.dependencies import get_current_user
 from app.categories import crud
 from app.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
 from app.database import get_db
 from app.models import User
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -105,4 +106,3 @@ def remove_category(
 
     crud.delete_category(db, category)
     invalidate_business_cache(current_user.id)
-    return None

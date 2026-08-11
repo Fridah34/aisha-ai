@@ -2,6 +2,9 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import String, func
+from sqlalchemy.orm import Session
+
 from app.models import (
     Cart,
     Category,
@@ -11,10 +14,8 @@ from app.models import (
     Product,
     User,
 )
-from sqlalchemy import String, func
-from sqlalchemy.orm import Session
-from app.webhook.client import send_text_message
 from app.utils import to_e164
+from app.webhook.client import send_text_message
 
 # How long a customer's mid-flow state (e.g. "awaiting_size") stays valid
 # before we treat it as abandoned and reset them to the top-level menu.
@@ -26,6 +27,25 @@ STATUS_KEYWORDS = {"status","order status","my order","track order","track my or
 PHOTO_KEYWORDS = {
     "photo", "picture", "pic", "image", "see it", "show me",
     "how does it look", "picha", "onyesha picha",
+}
+
+# Explicit human-handover requests. Checked BEFORE any deterministic
+# marketplace state (select_need/select_business in handle_marketplace_step,
+# and every awaiting_* branch in webhook/router.py) so a customer mid-flow
+# is never trapped by state-specific parsing when they explicitly ask to
+# speak with a person. Deliberately narrower than the LLM's own handover
+# criteria (no complaint/scam wording here) to keep false positives low
+# inside tight, numeric/size-driven deterministic flows.
+HUMAN_HANDOVER_KEYWORDS = {
+    "human", "human agent", "a human", "real person", "real human",
+    "talk to a human", "speak to a human", "talk to human", "speak to human",
+    "talk to someone", "speak to someone", "talk to a person", "speak to a person",
+    "talk to the owner", "speak to the owner", "talk to owner", "speak to owner",
+    "the owner", "business owner", "manager", "customer service", "customer care",
+    "representative", "an agent", "human agent please", "connect me with", "connect me to",
+    # Kiswahili
+    "binadamu", "wakala", "meneja", "mmiliki", "ongea na mtu",
+    "ongea na binadamu", "mtu halisi",
 }
 
 NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
@@ -87,6 +107,17 @@ def _resolve_paginated_choice(
 def is_photo_request(message: str) -> bool:
     text = message.strip().lower()
     return any(kw in text for kw in PHOTO_KEYWORDS)
+
+
+def is_human_handover_request(message: str) -> bool:
+    """Deterministic, keyword-based check for an explicit request to speak
+    with a human/agent/owner/manager. Unlike detect_handover() in
+    app.ai.service (which only inspects the LLM's own [HANDOVER_REQUIRED]
+    tag from inside the AI Q&A path), this runs BEFORE any marketplace
+    deterministic state is allowed to swallow the message with its own
+    state-specific fallback reply — see webhook/router.py's call sites."""
+    text = message.strip().lower()
+    return any(kw in text for kw in HUMAN_HANDOVER_KEYWORDS)
 
 
 def get_or_create_marketplace_session(
@@ -161,15 +192,25 @@ def get_all_categories(db: Session) -> list[str]:
 
 
 def get_businesses_by_category(db: Session, category_name: str) -> list[User]:
-    return (
-        db.query(User)
-        .join(Category, Category.business_id == User.id)
+    # Uses a correlated EXISTS subquery instead of `join(...).distinct()` so
+    # a business with multiple matching Category rows is still returned
+    # only once, without needing SELECT DISTINCT on the full User row.
+    # `users.handover_notifications` is a JSON column, and Postgres has no
+    # equality operator for `json` (only `jsonb`), so `SELECT DISTINCT
+    # users.*` fails with `UndefinedFunction: could not identify an
+    # equality operator for type json`.
+    category_match = (
+        db.query(Category.id)
         .filter(
+            Category.business_id == User.id,
             Category.name == category_name,
             Category.is_active,
-            User.is_active,
         )
-        .distinct()
+        .exists()
+    )
+    return (
+        db.query(User)
+        .filter(User.is_active, category_match)
         .order_by(User.business_name)
         .all()
     )
@@ -661,8 +702,10 @@ def handle_marketplace_step(
         )
         if product is None:
             return (
-                "Sorry, I didn't recognize that product. Please reply with a "
-                "product name from the list above, or 'menu' to start over.",
+                (
+                    "Sorry, I didn't recognize that product. Please reply with a "
+                    "product name from the list above, or 'menu' to start over."
+                ),
                 None,
             )
 

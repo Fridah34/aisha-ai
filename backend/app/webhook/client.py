@@ -1,8 +1,9 @@
-import os
 import json
-from twilio.rest import Client
+import os
+
+from dotenv import find_dotenv, load_dotenv
 from twilio.base.exceptions import TwilioRestException
-from dotenv import load_dotenv, find_dotenv
+from twilio.rest import Client
 
 load_dotenv(find_dotenv())
 
@@ -20,7 +21,7 @@ def _get_client() -> Client:
     return Client(sid, token)
 
 
-def send_text_message(to_phone: str, message: str, media_url: str = None) -> bool:
+def send_text_message(to_phone: str, message: str, media_url: str | None = None) -> bool:
     """
     Sends a plain text WhatsApp message to a customer.
 
@@ -55,7 +56,7 @@ def send_text_message(to_phone: str, message: str, media_url: str = None) -> boo
         print(f"[Twilio] API error {e.code}: {e.msg}")
         return False
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[Twilio] Unexpected error: {e}")
         return False
 
@@ -108,7 +109,7 @@ def send_list_picker(to_phone: str, body_text: str, items: list[str]) -> bool:
         print(f"[Twilio] API error {e.code}: {e.msg}")
         return False
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[Twilio] Unexpected error: {e}")
         return False
 
@@ -145,7 +146,7 @@ def send_quick_reply(to_phone: str, body_text: str) -> bool:
         print(f"[Twilio] API error {e.code}: {e.msg}")
         return False
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[Twilio] Unexpected error: {e}")
         return False
 
@@ -189,6 +190,6 @@ def send_browse_more_prompt(to_phone: str, body_text: str) -> bool:
         print(f"[Twilio] API error {e.code}: {e.msg}")
         return False
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[Twilio] Unexpected error: {e}")
         return False

@@ -2,14 +2,14 @@
 # DEPENDENCIES OPERATIONS:Route protection, Database  Hooks & Authentication Guard
 # ================================================================================================
 
-from typing import Optional
+
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
 from app.auth.utils import verify_access_token
 from app.database import get_db
 from app.models import User
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
 
 # ===========HTTP BEARER SCHEME================
 
@@ -21,8 +21,8 @@ security = HTTPBearer(
 
 def _get_token_from_request(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials],
-) -> Optional[str]:
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str | None:
     cookie_token = request.cookies.get("access_token")
     if cookie_token:
         return cookie_token
@@ -38,7 +38,7 @@ def _get_token_from_request(
 
 async def get_current_user(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ) -> User:
     token = _get_token_from_request(request, credentials)
@@ -78,9 +78,9 @@ async def get_current_user(
 
 async def get_optional_current_user(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
-) -> Optional[User]:
+) -> User | None:
     token = _get_token_from_request(request, credentials)
     if token is None:
         return None

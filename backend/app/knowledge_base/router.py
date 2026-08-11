@@ -4,6 +4,11 @@ import io
 import uuid
 from pathlib import Path
 
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import Response
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.ai.cache import invalidate_business_cache
 from app.auth.dependencies import get_current_user
 from app.database import get_session
@@ -20,10 +25,6 @@ from app.knowledge_base.schemas import (
     KnowledgeBaseConfigResponse,
 )
 from app.models import User
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import Response
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/knowledge-base", tags=["Knowledge Base"])
 
@@ -137,7 +138,7 @@ async def _learn_document(
         document.status = DocumentStatus.FAILED
         document.error_message = str(exc)
         return
-    except Exception:
+    except Exception:  # noqa: BLE001
         document.status = DocumentStatus.FAILED
         document.error_message = (
             "We couldn't read this document. Please try uploading it again."
@@ -160,7 +161,7 @@ async def _learn_document(
         document.status = DocumentStatus.FAILED
         document.error_message = str(exc)
         return
-    except Exception:
+    except Exception:  # noqa: BLE001
         document.status = DocumentStatus.FAILED
         document.error_message = (
             "Something went wrong while AISHA was learning from this document."
@@ -438,7 +439,7 @@ async def delete_document(
             business_id, document.stored_name
         )
         clean_path.unlink(missing_ok=True)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     await session.delete(document)

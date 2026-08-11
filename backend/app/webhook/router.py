@@ -8,36 +8,64 @@ from dotenv import find_dotenv, load_dotenv
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-load_dotenv(find_dotenv())
-
-from app.ai.cache import (  # noqa : E402
+from app.ai.cache import (
     already_sent_image,
     clear_active_business,
     get_active_business,
     mark_image_sent,
     set_active_business,
 )
-from app.ai.service import (  # noqa: E402
+from app.ai.service import (
+    classify_handover_urgency,
     detect_language,
+    get_or_create_conversation_state,
     normalize_phone,
+    notify_handover,
     process_customer_message,
     save_message,
 )
-
-from app.models import Customer, Product, User  # noqa: E402
-from app.webhook.client import send_browse_more_prompt, send_list_picker, send_text_message # noqa: E402
-from app.webhook.parser import extract_message_data  # noqa: E402
-from app.database import get_db  # noqa: E402
-from app.flows.marketplace_flow import (  # noqa: E402
-    add_item_to_cart,create_orders_from_cart,extract_order_ref,format_cart_summary,
-    format_order_status,format_product_list_for_business,get_latest_orders_for_business,
-    get_latest_orders_for_customer,get_or_create_cart,get_or_create_marketplace_session,
-    get_orders_by_reference,get_products_for_business_category,handle_marketplace_step,is_checkout_command,
-    is_photo_request,is_status_command,is_switch_command,is_business_question,parse_name_and_contact,parse_quantity,
-    reset_after_checkout,reset_to_menu,resolve_product_choice,resolve_size_choice,friendly_status,
+from app.database import get_db, get_session
+from app.flows.marketplace_flow import (
+    add_item_to_cart,
+    create_orders_from_cart,
+    extract_order_ref,
+    format_cart_summary,
+    format_order_status,
+    format_product_list_for_business,
+    friendly_status,
+    get_latest_orders_for_business,
+    get_latest_orders_for_customer,
+    get_or_create_cart,
+    get_or_create_marketplace_session,
+    get_orders_by_reference,
+    get_products_for_business_category,
+    handle_marketplace_step,
+    is_business_question,
+    is_checkout_command,
+    is_human_handover_request,
+    is_photo_request,
+    is_status_command,
+    is_switch_command,
+    parse_name_and_contact,
+    parse_quantity,
+    reset_after_checkout,
+    reset_to_menu,
+    resolve_product_choice,
+    resolve_size_choice,
 )
+from app.models import Customer, HandoverStatus, Product, User
+from app.webhook.client import (
+    send_browse_more_prompt,
+    send_list_picker,
+    send_text_message,
+)
+from app.webhook.parser import extract_message_data
+
+load_dotenv(find_dotenv())
+
 
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
@@ -294,10 +322,43 @@ def _send_fallback_reply(
     send_text_message(to_phone=customer_phone, message=reply_text)
 
 
+def _handle_deterministic_handover_request(
+    customer_phone: str, business: User, customer: Customer, language: str, message_text: str, db: Session,
+) -> None:
+    """Single centralized bypass for every deterministic marketplace state
+    below (awaiting_size, awaiting_quantity, awaiting_cart_action, etc.).
+    Called once, right before that dispatch, so an explicit 'I need a
+    human' can never be swallowed by a state-specific fallback reply like
+    'Please reply with just a number, e.g. 2'. Reuses the exact same
+    ConversationState + HandoverService pipeline app.ai.service.
+    process_customer_message uses for LLM-triggered handovers, so both
+    entry points produce one consistent HandoverEvent/notification
+    behavior — including the same 'already escalated' dedup so repeated
+    'I need a human' messages while waiting don't file duplicate events."""
+    state = get_or_create_conversation_state(customer.id, business.id, db)
+
+    if state.status in (HandoverStatus.HUMAN_ACTIVE, HandoverStatus.NEEDS_HUMAN):
+        reply_text = "You're connected with our team — they'll be with you shortly!"
+    else:
+        state.status = HandoverStatus.NEEDS_HUMAN
+        db.commit()
+        urgency = classify_handover_urgency(message_text)
+        notify_handover(
+            customer.id, business.id, message_text, urgency, db,
+            conversation_id=state.id, ai_summary=None,
+        )
+        reply_text = "Let me connect you with our team — they'll be with you shortly!"
+
+    save_message(customer_id=customer.id, business_id=business.id, role="assistant",
+                 content=reply_text, language=language, db=db)
+    send_text_message(to_phone=customer_phone, message=reply_text)
+
+
 @router.post("")
 async def receive_message(
     request: Request,
     db: Session = Depends(get_db),
+    async_db: AsyncSession = Depends(get_session),
 ):
     """
     Twilio calls this every time a customer sends a WhatsApp message.
@@ -417,6 +478,19 @@ async def receive_message(
                     else:
                         clear_active_business(customer_phone)
         if marketplace_session.selected_business_id is None:
+            if is_human_handover_request(message_text):
+                # No store selected yet, so there's no business to file a
+                # HandoverEvent against (business_id is NOT NULL). Ask which
+                # store first instead of silently replying with the
+                # 'please choose a number' category-list fallback.
+                reply_text = (
+                    "I'd love to connect you with a real person! Could you first "
+                    "tell me which store you're shopping with (reply 'menu' to see "
+                    "the list), so I can put you in touch with the right team?"
+                )
+                send_text_message(to_phone=customer_phone, message=reply_text)
+                return Response(status_code=200)
+
             reply_text, reply_items = handle_marketplace_step(marketplace_session, message_text, db)
 
             just_entered_store = marketplace_session.selected_business_id is not None
@@ -445,7 +519,7 @@ async def receive_message(
                         category_name=marketplace_session.selected_business_type,
                         db=db,
                     )
-                except Exception as side_effect_error:
+                except Exception as side_effect_error:  # noqa: BLE001
                     print(f"[Webhook] Post-store-entry side effect failed: {side_effect_error}")
 
             _send_marketplace_reply(customer_phone, reply_text, reply_items)
@@ -489,6 +563,15 @@ async def receive_message(
             language=language,
             db=db,
         )
+
+        # ── Human handover bypass ─────────────────────────────────────
+        # Single centralized check, run before every deterministic
+        # marketplace branch below (is_photo_request and the whole
+        # awaiting_* dispatch), so none of them can swallow an explicit
+        # request to speak with a human/agent/owner.
+        if is_human_handover_request(message_text):
+            _handle_deterministic_handover_request(customer_phone, business, customer, language, message_text, db)
+            return Response(status_code=200)
 
         if is_photo_request(message_text):
             matched_product = _resolve_photo_target(marketplace_session, business.id, message_text, db)
@@ -664,9 +747,9 @@ async def receive_message(
             # doesn't manage cart state, so 'checkout' or another product name
             # still works normally on the customer's next message.
             if is_business_question(message_text):
-                result = process_customer_message(
+                result = await process_customer_message(
                     phone_number=customer_phone, message_text=message_text,
-                    business_id=business.id, db=db, profile_name=profile_name,
+                    business_id=business.id, db=db, async_db=async_db, profile_name=profile_name,
                 )
                 reply_text = result.get("response") or (
                     "Let me connect you with the team to check on that — they'll be with you shortly."
@@ -757,9 +840,9 @@ async def receive_message(
 
         # ── Process through AISHA's AI engine (only reached on fall-through) ──
         t_before_ai = time.time()
-        result = process_customer_message(
+        result = await process_customer_message(
             phone_number=customer_phone, message_text=message_text,
-            business_id=business.id, db=db, profile_name=profile_name,
+            business_id=business.id, db=db, async_db=async_db, profile_name=profile_name,
         )
         t_after_ai = time.time()
         print(f"[TIMING] AI call: {t_after_ai - t_before_ai:.2f}s")
@@ -794,7 +877,7 @@ async def receive_message(
             print(f"[Webhook] Handover flagged for customer {customer_phone}")
         return Response(status_code=200)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[Webhook] Unhandled error: {e}")
         return Response(status_code=200)
     

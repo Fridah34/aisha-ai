@@ -1,10 +1,15 @@
-import uuid
 import re
+import uuid
+
+from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.ai import cache
-from app.ai.prompt_builder import build_system_prompt
 from app.ai.provider import get_ai_response
 from app.ai.token_utils import truncate_history_to_token_limit
+from app.handover import HandoverService
+from app.knowledge_base.manager import KnowledgeBaseManager
 from app.models import (
     Category,
     Conversation,
@@ -16,8 +21,6 @@ from app.models import (
     Product,
     User,
 )
-from sqlalchemy import func
-from sqlalchemy.orm import Session
 
 SWITCH_HINT = "\n\n_Reply 'menu' to browse other stores anytime._"
 
@@ -118,55 +121,29 @@ URGENT_KEYWORDS = {
 }
 
 
-def get_business_prompt(business_id: uuid.UUID, db: Session) -> str:
-    """Build system prompt from business data, checking Redis cache first."""
-    # Step 1 - check Redis first
+async def build_prompt_from_context(
+    business_id: uuid.UUID, merchant_name: str, async_session: AsyncSession
+) -> str:
+    """
+    Build system prompt using KnowledgeBaseManager to retrieve from wiki_chunks.
+    Checks Redis cache first, then builds fresh prompt on miss.
+    """
     cached = cache.get_cached_business_prompt(business_id)
     if cached:
         print(f"[Cache HIT] Business {business_id} prompt from redis")
         return cached
 
-    # Step 2 - cache miss, fetch from PostgreSQL
-    print(f"[Cache MISS] Fetching business {business_id} from PostgreSQL")
+    print(f"[Cache MISS] Building prompt for business {business_id} from knowledge base")
 
-    user = db.query(User).filter(User.id == business_id).first()
-    if not user:
-        raise ValueError(f"Business owner with id {business_id} not found")
+    manager = KnowledgeBaseManager(session=async_session)
 
-    products = (
-        db.query(Product)
-        .filter(Product.business_id == business_id)
-        .filter(Product.is_available.is_(True))
-        .all()
+    payload = await manager.build_prompt_payload(
+        business_id=business_id,
+        merchant_name=merchant_name,
+        customer_message="",
     )
 
-    products_list = [
-        {
-            "name": p.name,
-            "price": float(p.price),
-            "is_available": p.is_available,
-            "description": p.description,
-            "category": p.category,
-            "variant_label": p.variant_label,
-            "variant_options": p.variant_options,
-            "unit": p.unit,
-            "upsell_text": p.upsell_text,
-            "image_url": p.image_url,
-        }
-        for p in products
-    ]
-
-    # Fetch knowledge base for the business
-    knowledge_base = user.knowledge_base_text or ""
-    business_type = getattr(user, "business_type", "retail") or "retail"
-
-    prompt = build_system_prompt(
-        business_name=user.business_name,
-        products=products_list,
-        knowledge_base=knowledge_base,
-        business_type=business_type,
-    )
-
+    prompt = manager.render_and_verify(payload)
     cache.cache_business_prompt(business_id, prompt)
 
     return prompt
@@ -258,8 +235,7 @@ def save_message(
 def normalize_phone(phone_number: str) -> str:
     """Normalize WhatsApp phone numbers to consistent format."""
     phone = phone_number.strip()
-    if phone.startswith("whatsapp:"):
-        phone = phone[len("whatsapp:") :]
+    phone = phone.removeprefix("whatsapp:")
     phone = phone.strip()
     if not phone.startswith("+"):
         phone = "+" + phone
@@ -408,11 +384,12 @@ def format_products_in_category(products: list) -> str:
     return "\n".join(lines)
 
 
-def process_customer_message(
+async def process_customer_message(
     phone_number: str,
     message_text: str,
     business_id: uuid.UUID,
     db: Session,
+    async_db: AsyncSession | None = None,
     profile_name=None,
 ) -> dict:
     """Main orchestrator — called by the WhatsApp webhook on every incoming customer message."""
@@ -505,8 +482,19 @@ def process_customer_message(
             state.pending_action = None
             db.commit()
 
-    # 4. Build prompt from real database data
-    system_prompt = get_business_prompt(business_id, db)
+    # 4. Build prompt from knowledge base
+    if async_db is None:
+        raise ValueError("async_db parameter is required for knowledge base retrieval")
+
+    user = db.query(User).filter(User.id == business_id).first()
+    if not user:
+        raise ValueError(f"Business owner with id {business_id} not found")
+
+    system_prompt = await build_prompt_from_context(
+        business_id=business_id,
+        merchant_name=user.business_name,
+        async_session=async_db,
+    )
 
     # 5. Fetch conversation history from database
     history = get_conversation_history(customer.id, business_id, db)
@@ -558,7 +546,10 @@ def process_customer_message(
     if needs_handover:
         state.status = HandoverStatus.NEEDS_HUMAN
         db.commit()
-        notify_handover(customer.id, business_id, message_text, urgency, db)
+        notify_handover(
+            customer.id, business_id, message_text, urgency, db,
+            conversation_id=state.id, ai_summary=clean,
+        )
 
     return {
         "response": clean,
@@ -577,22 +568,29 @@ def notify_handover(
     customer_message: str,
     urgency: str,
     db: Session,
+    *,
+    conversation_id: uuid.UUID,
+    ai_summary: str | None = None,
 ) -> None:
     """
-    Alerts when AISHA triggers a handover.
-    Logs to console. Dashboard picks up needs_human conversations via polling/websocket.
+    Creates the HandoverEvent audit row and dispatches notifications across
+    every channel the business has enabled (Dashboard/WhatsApp/Email), each
+    respecting its own configured delay. See app/handover/handover_service.py.
     """
-    user = db.query(User).filter(User.id == business_id).first()
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
-
     phone = customer.phone_number if customer else "unknown"
-    business = user.business_name if user else f"business {business_id}"
+    customer_name = customer.name if customer else None
 
-    print(
-        f"\n[HANDOVER {urgency.upper()}]\n"
-        f"Business : {business}\n"
-        f"Customer : {phone}\n"
-        f"Message  : {customer_message[:120]}\n"
+    HandoverService.create_event_and_notify(
+        db,
+        business_id=business_id,
+        conversation_id=conversation_id,
+        customer_id=customer_id,
+        customer_name=customer_name,
+        customer_phone=phone,
+        customer_last_message=customer_message,
+        ai_summary=ai_summary,
+        reason=f"[{urgency.upper()}] {customer_message[:200]}" if urgency else customer_message,
     )
 
 

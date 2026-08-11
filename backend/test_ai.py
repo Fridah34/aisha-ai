@@ -1,5 +1,5 @@
-from app.ai.provider import get_ai_response
 from app.ai.prompt_builder import build_system_prompt
+from app.ai.provider import get_ai_response
 
 # Fake business data to test with
 business_name = "Zawadi Boutique"
