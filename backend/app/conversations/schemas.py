@@ -60,10 +60,12 @@ class HandoverEventOut(BaseModel):
     """
 
     id: uuid.UUID
-    trigger_message: str
+    reason_code: str
     reason: str
+    ai_summary: str | None = None
+    customer_last_message: str
     created_at: datetime
-    resolved_at: Optional[datetime] = None
+    resolved_at: datetime| None = None
 
     model_config = ConfigDict(from_attributes=True)
     

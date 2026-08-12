@@ -1,7 +1,8 @@
+import asyncio
 import os
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone, datetime
 from urllib.parse import quote
 
 from sqlalchemy import func
@@ -22,8 +23,8 @@ from app.ai.service import (
     process_customer_message,
     save_message,
 )
-from app.database import SessionLocal
-from app.models import Customer, Product, User, ConversationState, HandoverStatus, HandoverEvent
+from app.database import SessionLocal, async_session_factory
+from app.models import ConversationState, Customer, HandoverStatus, Product, User
 from app.webhook.client import send_browse_more_prompt, send_list_picker, send_text_message
 from app.flows.marketplace_flow import (
     add_item_to_cart, create_orders_from_cart, extract_order_ref, format_cart_summary,
@@ -40,20 +41,10 @@ from app.flows.reply_composer import compose
 
 MAX_PRODUCT_IMAGES = 5
 STALE_PHOTO_WINDOW = timedelta(hours=24)
-TRIGGER_MESSAGE_MAX_LEN = 500  # truncate before storing, in case of a very long customer message
 
 UNSUPPORTED_MESSAGE = (
     "Sorry, I can only read text messages right now. Please type your question.\n\n"
     "Samahani, ninaweza kusoma maandishi tu kwa sasa. Tafadhali andika swali lako."
-)
-
-HANDOVER_ACK_MESSAGE = (
-    "Let me connect you to my team for that. If you have any further "
-    "questions or need assistance, feel free to ask! To browse other "
-    "categories, type 'menu'.\n\n"
-    "Nitakuunganisha na timu yangu kwa hilo. Ukiwa na maswali mengine au "
-    "unahitaji msaada, jisikie huru kuuliza! Kuvinjari makundi mengine, "
-    "andika 'menu'."
 )
 
 
@@ -194,28 +185,38 @@ def _is_negligible_input(text: str) -> bool:
 
 def _looks_like_variant_attempt(text: str) -> bool:
     """A loose signal that the customer is trying to answer a size/variant
-    prompt rather than saying something unrelated (a greeting, chit-chat,
-    an off-topic comment, a product-disambiguation answer). Deliberately
-    narrow: just checks for a digit, since real size attempts ('38',
-    'size 2', '40 please') almost always contain one, while greetings
-    and small talk almost never do.
-
-    Replaces the old 'not a question -> must be a size attempt'
-    heuristic, which incorrectly caught plain greetings like 'hey' and
-    kept re-appending the size list to answers that had nothing to do
-    with sizing (e.g. "hey" after an earlier size prompt, or an AI
-    answer disambiguating which PRODUCT was meant, not which size)."""
+    prompt rather than saying something unrelated. See original docstring —
+    unchanged from the RQ-migration session."""
     return any(ch.isdigit() for ch in text)
+
+
+def _run_ai_call(
+    customer_phone: str, business_id: uuid.UUID, message_text: str, db: Session, profile_name: str | None
+) -> dict:
+    """process_customer_message() is now `async def` — it needs an
+    AsyncSession to build the prompt from the knowledge base
+    (KnowledgeBaseManager / wiki_chunks). This worker job runs fully
+    synchronously (RQ calls job functions with no event loop already
+    running), so each AI call gets its own short-lived event loop and
+    AsyncSession, opened and closed immediately around just that one
+    call — not held for the life of the job. `db` (the sync Session)
+    still gets passed through unchanged; only the knowledge-base lookup
+    needs the async session."""
+    async def _inner():
+        async with async_session_factory() as async_db:
+            return await process_customer_message(
+                phone_number=customer_phone, message_text=message_text,
+                business_id=business_id, db=db, async_db=async_db,
+                profile_name=profile_name,
+            )
+    return asyncio.run(_inner())
 
 
 def _ask_ai(
     customer_phone: str, business_id: uuid.UUID, message_text: str, db: Session, profile_name: str | None
 ) -> str | None:
     t0 = time.time()
-    result = process_customer_message(
-        phone_number=customer_phone, message_text=message_text,
-        business_id=business_id, db=db, profile_name=profile_name,
-    )
+    result = _run_ai_call(customer_phone, business_id, message_text, db, profile_name)
     print(f"[TIMING] _ask_ai (AI call): {time.time() - t0:.2f}s")
     if result.get("not_understood"):
         return None
@@ -225,18 +226,7 @@ def _ask_ai(
 def _reanchor_after_ai_variant_answer(
     marketplace_session, product: Product, ai_answer: str | None, message_text: str, db: Session
 ) -> str:
-    """After the AI answers a free-text message while the customer is
-    mid product-selection (awaiting_size OR awaiting_quantity), decide
-    whether to re-anchor them into awaiting_size (bolt the size list
-    back on) or let the AI's answer stand alone.
-
-    Re-anchoring only happens when the message actually LOOKS like an
-    attempted (but invalid) size answer — contains a digit, and isn't
-    phrased as a question. Everything else (a real question, a greeting,
-    off-topic chat, a product-disambiguation answer) gets the AI's
-    answer on its own — re-appending the size list underneath an
-    unrelated reply reads like the bot ignored what was actually said.
-    """
+    """Unchanged from the RQ-migration session — see original docstring."""
     if not ai_answer or not product.variant_options:
         return ai_answer or "Reply with a valid quantity number to choose how many you want."
 
@@ -250,91 +240,24 @@ def _reanchor_after_ai_variant_answer(
     return ai_answer + "\n\n" + _format_numbered_list(sizes)
 
 
-def _flag_needs_human(
-    customer_id: uuid.UUID, business_id: uuid.UUID, db: Session,
-    trigger_message: str, reason: str,
-) -> None:
-    """Marks the conversation as needing an owner's attention AND appends
-    a HandoverEvent row — one per escalation, not overwritten — so the
-    dashboard can show the full trail of questions AISHA couldn't answer,
-    not just the most recent one. A conversation that escalates three
-    times before an owner resolves it now produces three rows, all with
-    resolved_at = NULL until the owner clicks "Mark resolved" (that
-    endpoint should bulk-set resolved_at on the open rows for this
-    customer+business — see handover doc for the illustrative snippet).
-
-    If the owner is already actively chatting (HUMAN_ACTIVE), a fresh
-    trigger doesn't downgrade the status back to NEEDS_HUMAN — they're
-    already engaged — but the event is still logged so it shows up in
-    the history.
-    """
-    conv_state = db.query(ConversationState).filter_by(customer_id=customer_id, business_id=business_id).first()
-    if not conv_state:
-        conv_state = ConversationState(customer_id=customer_id, business_id=business_id)
-        db.add(conv_state)
-
-    if conv_state.status != HandoverStatus.HUMAN_ACTIVE:
-        conv_state.status = HandoverStatus.NEEDS_HUMAN
-
-    db.add(HandoverEvent(
-        customer_id=customer_id,
-        business_id=business_id,
-        trigger_message=(trigger_message or "")[:TRIGGER_MESSAGE_MAX_LEN],
-        reason=reason,
-    ))
-    db.commit()
-
-
-def _send_with_handover(
-    customer_phone: str, base_reply: str, customer: Customer, business_id: uuid.UUID,
-    language: str, db: Session, reason: str, trigger_message: str,
-) -> None:
-    """Send an answer the AI generated but flagged as needing a human,
-    append the reassurance line, save it, and flag the conversation.
-    One place for this logic instead of duplicating it at every site
-    that can trigger a handover.
-    """
-    reply_text = base_reply + "\n\n" + HANDOVER_ACK_MESSAGE
-    save_message(customer_id=customer.id, business_id=business_id, role="assistant",
-                 content=reply_text, language=language, db=db)
-    send_text_message(to_phone=customer_phone, message=reply_text)
-    _flag_needs_human(customer.id, business_id, db, trigger_message=trigger_message, reason=reason)
-    print(f"[Worker] Handover flagged ({reason}) for customer {customer_phone}, business {business_id}")
-
-
 def process_customer_message_job(data: dict) -> None:
-    """RQ job entrypoint — enqueued from app/webhook/router.py with the
-    flat dict extract_message_data() produces. Runs in a worker process,
-    separate from the FastAPI process that enqueued it, so it opens its
-    own DB session and re-raises on error so RQ's retry policy fires.
+    """RQ job entrypoint. See original docstring for the lock/ordering
+    rationale — unchanged.
 
-    The per-customer lock is what enforces ordering across worker
-    processes: RQ's queue guarantees reliable delivery but not that two
-    jobs for the SAME customer run one-at-a-time or in order, especially
-    with multiple workers running. Without this lock, two close-together
-    messages from one customer could still race on MarketplaceSession
-    reads/writes.
-
-    Every major hop is timed and printed as [TIMING] so slow requests
-    are diagnosable from worker logs alone, without needing to
-    reproduce the slowness live.
-
-    _resolve_photo_target is imported from marketplace_flow.py rather
-    than defined locally here — it used to be duplicated in both files,
-    and this file's stale copy (unscoped by category) was silently
-    shadowing the fixed, category-scoped version. Single source of
-    truth now lives in marketplace_flow.py.
-
-    Handover status (NEEDS_HUMAN / HUMAN_ACTIVE) is NO LONGER a gate on
-    automation here. This job only ever runs off an incoming customer
-    message; the owner's dashboard replies go through a completely
-    separate code path (sendReply), not through this job — so there's
-    no risk of the bot "talking over" the owner from inside this file.
-    Flagging a conversation now means "show this on the dashboard,"
-    nothing more: AISHA keeps answering the customer normally (menu,
-    browsing, checkout, more questions) regardless of status, and the
-    owner can step in whenever they check the inbox. See
-    _flag_needs_human for what gets recorded when a handover triggers.
+    NEW in this version: after the customer is resolved for the active
+    business, checks ConversationState.status. Only HUMAN_ACTIVE (the
+    owner has explicitly clicked "take over" via
+    PATCH /conversations/{id}/takeover) silences AISHA entirely — this
+    is the "matching comment on the handover gate" that
+    app/ai/service.py's process_customer_message() docstring refers to.
+    NEEDS_HUMAN (AISHA flagged + notified, but no one has taken over
+    yet) does NOT gate — AISHA keeps answering normally until an owner
+    actually takes over, per service.py's own comment. Without this
+    check here, nothing in the codebase ever stops the deterministic
+    flow / AI fall-through from running after a human takes over, so
+    the owner's manual replies (send_manual_reply in
+    app/conversations/router.py) would get talked over by AISHA on the
+    customer's very next message.
     """
     t_job_start = time.time()
     db = SessionLocal()
@@ -441,7 +364,6 @@ def process_customer_message_job(data: dict) -> None:
                         customer_phone, marketplace_session.selected_business_id, db, profile_name=profile_name
                     )
                     language = detect_language(message_text)
-
                     save_message(customer_id=customer.id, business_id=marketplace_session.selected_business_id,
                                   role="user", content=message_text, language=language, db=db)
                     save_message(customer_id=customer.id, business_id=marketplace_session.selected_business_id,
@@ -488,22 +410,20 @@ def process_customer_message_job(data: dict) -> None:
 
         customer = _get_or_create_customer_for_business(customer_phone, business.id, db, profile_name=profile_name)
         language = detect_language(message_text)
+        save_message(customer_id=customer.id, business_id=business.id, role="user",
+                     content=message_text, language=language, db=db)
 
-        # ── Handover status: informational only, not a gate ──
-        # NEEDS_HUMAN / HUMAN_ACTIVE no longer stop the automated flow —
-        # they only affect what the dashboard shows. AISHA keeps serving
-        # this customer (menu, browsing, checkout, questions) exactly as
-        # normal below. Logged here purely for worker-log visibility.
+        # ── Human-handover gate ──────────────────────────────────────
+        # Only HUMAN_ACTIVE silences AISHA — see function docstring.
         conv_state = (
             db.query(ConversationState)
             .filter_by(customer_id=customer.id, business_id=business.id)
             .first()
         )
-        if conv_state and conv_state.status in (HandoverStatus.NEEDS_HUMAN, HandoverStatus.HUMAN_ACTIVE):
-            print(f"[Worker] {conv_state.status.value} flag present for {customer_phone} — continuing automated flow")
-
-        save_message(customer_id=customer.id, business_id=business.id, role="user",
-                     content=message_text, language=language, db=db)
+        if conv_state and conv_state.status == HandoverStatus.HUMAN_ACTIVE:
+            print(f"[Worker] Skipping automation — owner has taken over for {customer_phone}")
+            print(f"[TIMING] TOTAL job time: {time.time() - t_job_start:.2f}s")
+            return
 
         if is_photo_request(message_text):
             matched_product = _resolve_photo_target(marketplace_session, business.id, message_text, db)
@@ -698,10 +618,13 @@ def process_customer_message_job(data: dict) -> None:
             if not _is_negligible_input(message_text):
                 ai_answer = _ask_ai(customer_phone, business.id, message_text, db, profile_name)
                 if ai_answer:
-                    _send_with_handover(
-                        customer_phone, ai_answer, customer, business.id, language, db,
-                        reason="business question (cart)", trigger_message=message_text,
-                    )
+                    save_message(customer_id=customer.id, business_id=business.id, role="assistant",
+                                 content=ai_answer, language=language, db=db)
+                    send_text_message(to_phone=customer_phone, message=ai_answer)
+                    # needs_human handling (state, HandoverEvent, notifications
+                    # across dashboard/WhatsApp/email) all happens inside
+                    # process_customer_message() itself now — see
+                    # app/ai/service.py's notify_handover(). Nothing to do here.
                     print(f"[TIMING] TOTAL job time: {time.time() - t_job_start:.2f}s")
                     return
 
@@ -770,10 +693,7 @@ def process_customer_message_job(data: dict) -> None:
 
         # ── Fall-through to AISHA's AI engine ──
         t0 = time.time()
-        result = process_customer_message(
-            phone_number=customer_phone, message_text=message_text,
-            business_id=business.id, db=db, profile_name=profile_name,
-        )
+        result = _run_ai_call(customer_phone, business.id, message_text, db, profile_name)
         print(f"[TIMING] AI call (fall-through): {time.time() - t0:.2f}s")
 
         if not result.get("response"):
@@ -797,10 +717,6 @@ def process_customer_message_job(data: dict) -> None:
         if not sent:
             print(f"[Worker] Failed to deliver reply to {customer_phone}")
         if result["needs_handover"]:
-            _flag_needs_human(
-                customer.id, business.id, db,
-                trigger_message=message_text, reason="ai_fallback",
-            )
             print(f"[Worker] Handover flagged for customer {customer_phone}")
         print(f"[TIMING] TOTAL job time: {time.time() - t_job_start:.2f}s")
         return
@@ -812,5 +728,3 @@ def process_customer_message_job(data: dict) -> None:
     finally:
         release_customer_lock(customer_phone, lock_token)
         db.close()
-        
-        

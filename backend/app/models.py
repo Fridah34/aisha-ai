@@ -544,56 +544,6 @@ class Cart(Base):
 
     business: Mapped[User] = relationship("User", back_populates="carts")
 
-# ==============================================================================
-# HANDOVER EVENT (audit trail of AI → human escalations)
-# ==============================================================================
-class HandoverEvent(Base):
-    """One row per AI→human escalation. Unlike ConversationState.status,
-    which only reflects the CURRENT state of a conversation, this table
-    is append-only — it preserves every question AISHA punted on, across
-    repeated escalations in the same conversation and across time, so an
-    owner (or a 'handover history' report) can see the full trail instead
-    of just whatever triggered the most recent flag.
-
-    resolved_at is set when the owner marks the conversation resolved —
-    NOT necessarily when the specific question was answered, since the
-    dashboard resolves at the conversation level, not per-event.
-    """
-
-    __tablename__ = "handover_events"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    customer_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("customers.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    business_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    trigger_message: Mapped[str] = mapped_column(Text, nullable=False)
-    reason: Mapped[str] = mapped_column(String(50), nullable=False)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True
-    )
-    resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    customer: Mapped["Customer"] = relationship(
-        "Customer", back_populates="handover_events"
-    )
-    business: Mapped["User"] = relationship(
-        "User", back_populates="handover_events"
-    )
 
 # ==============================================================================
 # ORDER
