@@ -1,10 +1,10 @@
 import hashlib
 import json
 import os
+import time as _time
 import uuid
 
 import redis
-import time as _time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -72,7 +72,7 @@ def acquire_customer_lock(
         try:
             if redis_client.set(key, token, nx=True, ex=ttl_seconds):
                 return token
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Redis lock acquire error: {e}")
             return "no-redis"
         _time.sleep(0.2)
@@ -96,7 +96,7 @@ def release_customer_lock(customer_phone: str, token: str) -> None:
     """
     try:
         redis_client.eval(lua_release, 1, key, token)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Redis lock release error: {e}")
 
 
@@ -112,7 +112,7 @@ def is_duplicate_message(message_sid: str, ttl_seconds: int = 86400) -> bool:
     try:
         was_new = redis_client.set(key, "1", nx=True, ex=ttl_seconds)
         return not was_new
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Redis dedup check error: {e}")
         return False
     
@@ -349,3 +349,5 @@ def clear_active_business(customer_phone: str) -> None:
         redis_client.delete(key)
     except Exception as e:  # noqa: BLE001
         print(f"Redis active business delete error: {e}")
+        
+        

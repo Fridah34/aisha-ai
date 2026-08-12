@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 from app.ai.service import save_message
 from app.auth.dependencies import get_current_user
 from app.conversations import crud
-from app.conversations.schemas import ConversationSummary, ConversationThread, HandoverEventOut
+from app.conversations.schemas import (
+    ConversationSummary,
+    ConversationThread,
+    HandoverEventOut,
+)
 from app.database import get_db
 from app.handover import HandoverService
 from app.models import ConversationState, Customer, HandoverEvent, HandoverStatus, User

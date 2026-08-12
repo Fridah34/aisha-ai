@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from collections.abc import Sequence
 from functools import lru_cache
@@ -36,10 +37,38 @@ from app.knowledge_base.security import (
 )
 from app.knowledge_base.tenancy import TenantFileResolver
 
+logger = logging.getLogger(__name__)
+
+# Anchor all knowledge-base paths to this module's own location, not the
+# process's current working directory. uvicorn and the RQ worker are separate
+# OS processes and are not guaranteed to be launched from the same cwd — a
+# bare relative path silently breaks depending on how/where each process is
+# started. __file__ is stable regardless of launch context.
+#
+# NOTE: these two directories live at DIFFERENT levels of the tree (confirmed
+# via `find` on the deployed checkout) — they are not both under one shared
+# "knowledge_base root", so each gets its own anchor rather than a shared one:
+#   <repo_root>/knowledge_base/system_prompts/aisha_voice.txt   (repo root)
+#   <repo_root>/backend/knowledge_base/clean_wiki/              (inside backend/)
+# manager.py itself lives at <repo_root>/backend/app/knowledge_base/manager.py
+_MODULE_DIR = Path(__file__).resolve().parent
+_BACKEND_ROOT = _MODULE_DIR.parents[1]     # .../app/knowledge_base -> .../app -> .../backend
+_REPO_ROOT = _MODULE_DIR.parents[2]        # .../app/knowledge_base -> .../app -> .../backend -> repo root
+
 # Establish default global system tracking constraints paths
-SYSTEM_PROMPT_PATH = Path("knowledge_base/system_prompts/aisha_voice.txt")
+SYSTEM_PROMPT_PATH = _REPO_ROOT / "knowledge_base" / "system_prompts" / "aisha_voice.txt"
+DEFAULT_CLEAN_WIKI_DIR = _BACKEND_ROOT / "knowledge_base" / "clean_wiki"
 DEFAULT_RETRIEVAL_LIMIT: int = 5
 DEFAULT_CONVERSATION_LIMIT: int = 10
+
+# Fallback used only if the system prompt file is missing, so a deploy/path
+# mistake degrades to a generic-but-functional reply instead of silently
+# killing every message job (see _load_system_block).
+_FALLBACK_SYSTEM_PROMPT = (
+    "You are AISHA, a helpful WhatsApp sales assistant. Answer customer "
+    "questions about the store's products politely and concisely. If you "
+    "are unsure of an answer, offer to connect the customer with a human."
+)
 
 
 class IngestionRejectedError(ValueError):
@@ -61,7 +90,7 @@ class KnowledgeBaseManager:
     def __init__(
         self,
         session: AsyncSession,
-        clean_wiki_dir: Path | str = "knowledge_base/clean_wiki",
+        clean_wiki_dir: Path | str = DEFAULT_CLEAN_WIKI_DIR,
     ) -> None:
         self.session: AsyncSession = session
         # Lock down our directory traversal sandbox safety resolver
@@ -236,9 +265,20 @@ class KnowledgeBaseManager:
         return rendered
 
     def _load_system_block(self) -> str:
-        """Resolves system prompt blocks securely via our lru_cache file reader helper."""
-        #  CACHED: Using lru_cache wrapper to prevent redundant file system disk reading
-        return _read_system_prompt(SYSTEM_PROMPT_PATH)
+        """Resolves system prompt blocks securely via our lru_cache file reader helper.
+
+        Falls back to a generic in-code prompt if the file is missing, so a
+        deploy/path misconfiguration degrades to a working-but-generic reply
+        instead of silently failing every customer message job.
+        """
+        try:
+            return _read_system_prompt(SYSTEM_PROMPT_PATH)
+        except FileNotFoundError:
+            logger.error(
+                "System prompt file missing at %s — using fallback prompt",
+                SYSTEM_PROMPT_PATH,
+            )
+            return _FALLBACK_SYSTEM_PROMPT
 
     async def _load_retrieved_context_block(
         self, business_id: uuid.UUID, query: str, limit: int
@@ -308,3 +348,5 @@ class KnowledgeBaseManager:
             )
             for row in reversed(rows)
         ]
+        
+        

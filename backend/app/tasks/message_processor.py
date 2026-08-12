@@ -728,3 +728,4 @@ def process_customer_message_job(data: dict) -> None:
     finally:
         release_customer_lock(customer_phone, lock_token)
         db.close()
+        

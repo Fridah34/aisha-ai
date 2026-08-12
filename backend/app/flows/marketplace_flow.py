@@ -21,6 +21,14 @@ from app.webhook.client import send_text_message
 # before we treat it as abandoned and reset them to the top-level menu.
 SESSION_TIMEOUT_HOURS = 24
 
+# How long a "last viewed product" guess (see _resolve_photo_target below)
+# stays trustworthy before we treat it as stale and ignore it. Defined here
+# — not in message_processor.py, which only *calls* _resolve_photo_target —
+# since this is the module that actually uses it. message_processor.py
+# imports it from here so there's a single source of truth instead of two
+# constants that can silently drift apart.
+STALE_PHOTO_WINDOW = timedelta(hours=24)
+
 SWITCH_KEYWORDS = {"switch", "switch store", "change store", "menu", "other shops"}
 CHECKOUT_KEYWORDS = {"checkout", "check out", "done", "complete order", "finish order"}
 STATUS_KEYWORDS = {"status","order status","my order","track order","track my order"}
@@ -781,9 +789,11 @@ def handle_marketplace_step(
         if choice is None:
             if is_business_question(message):
                 return (
-                    "That sounds like a question for a specific store — "
-                    "pick a category below first, then the store, and "
-                    "I'll help you get an answer.",
+                    (
+                        "That sounds like a question for a specific store — "
+                        "pick a category below first, then the store, and "
+                        "I'll help you get an answer."
+                    ),
                     _menu_items_for_offset(titled_categories, _get_offset(session)),
                 )
             return "Sorry, please reply with a number from the list above.", None
@@ -815,8 +825,10 @@ def handle_marketplace_step(
         if choice is None:
             if is_business_question(message):
                 return (
-                    "That's worth asking — pick a store below and I can "
-                    "help answer it, or connect you with them directly.",
+                    (
+                        "That's worth asking — pick a store below and I can "
+                        "help answer it, or connect you with them directly."
+                    ),
                     _menu_items_for_offset(store_names, _get_offset(session)),
                 )
             return "Sorry, please reply with a number from the list above.", None
@@ -1074,4 +1086,3 @@ def _resolve_choice(text: str, options: list[str]):
         if opt.lower() == text:
             return opt
     return None
-
