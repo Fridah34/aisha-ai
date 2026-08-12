@@ -2,7 +2,7 @@ import asyncio
 import os
 import time
 import uuid
-from datetime import timedelta, timezone, datetime
+from datetime import timedelta
 from urllib.parse import quote
 
 from sqlalchemy import func
@@ -24,20 +24,44 @@ from app.ai.service import (
     save_message,
 )
 from app.database import SessionLocal, async_session_factory
-from app.models import ConversationState, Customer, HandoverStatus, Product, User
-from app.webhook.client import send_browse_more_prompt, send_list_picker, send_text_message
 from app.flows.marketplace_flow import (
-    add_item_to_cart, create_orders_from_cart, extract_order_ref, format_cart_summary,
-    format_order_status, format_product_list_for_business, get_latest_orders_for_business,
-    get_category_id_for_business, get_latest_orders_for_customer, get_or_create_cart,
-    get_or_create_marketplace_session, get_orders_by_reference, get_products_for_business_category,
-    handle_marketplace_step, is_checkout_command, is_photo_request, is_status_command,
-    is_switch_command, parse_name_and_contact, parse_quantity, reset_after_checkout,
-    reset_to_menu, resolve_product_choice, resolve_size_choice, friendly_status,
-    find_mentioned_alternate_variant, looks_like_question, _resolve_photo_target,
-    _parse_sizes, _format_numbered_list,
+    _format_numbered_list,
+    _parse_sizes,
+    _resolve_photo_target,
+    add_item_to_cart,
+    create_orders_from_cart,
+    extract_order_ref,
+    find_mentioned_alternate_variant,
+    format_cart_summary,
+    format_order_status,
+    format_product_list_for_business,
+    friendly_status,
+    get_latest_orders_for_business,
+    get_latest_orders_for_customer,
+    get_or_create_cart,
+    get_or_create_marketplace_session,
+    get_orders_by_reference,
+    get_products_for_business_category,
+    handle_marketplace_step,
+    is_checkout_command,
+    is_photo_request,
+    is_status_command,
+    is_switch_command,
+    looks_like_question,
+    parse_name_and_contact,
+    parse_quantity,
+    reset_after_checkout,
+    reset_to_menu,
+    resolve_product_choice,
+    resolve_size_choice,
 )
 from app.flows.reply_composer import compose
+from app.models import ConversationState, Customer, HandoverStatus, Product, User
+from app.webhook.client import (
+    send_browse_more_prompt,
+    send_list_picker,
+    send_text_message,
+)
 
 MAX_PRODUCT_IMAGES = 5
 STALE_PHOTO_WINDOW = timedelta(hours=24)
@@ -244,20 +268,15 @@ def process_customer_message_job(data: dict) -> None:
     """RQ job entrypoint. See original docstring for the lock/ordering
     rationale — unchanged.
 
-    NEW in this version: after the customer is resolved for the active
-    business, checks ConversationState.status. Only HUMAN_ACTIVE (the
-    owner has explicitly clicked "take over" via
-    PATCH /conversations/{id}/takeover) silences AISHA entirely — this
-    is the "matching comment on the handover gate" that
-    app/ai/service.py's process_customer_message() docstring refers to.
-    NEEDS_HUMAN (AISHA flagged + notified, but no one has taken over
-    yet) does NOT gate — AISHA keeps answering normally until an owner
-    actually takes over, per service.py's own comment. Without this
-    check here, nothing in the codebase ever stops the deterministic
-    flow / AI fall-through from running after a human takes over, so
-    the owner's manual replies (send_manual_reply in
-    app/conversations/router.py) would get talked over by AISHA on the
-    customer's very next message.
+    Human-handover gate: only HandoverStatus.HUMAN_ACTIVE (the owner has
+    explicitly clicked "take over" via PATCH /conversations/{id}/takeover)
+    silences AISHA entirely. NEEDS_HUMAN (AISHA flagged + notified, but
+    no one has taken over yet) does NOT gate — AISHA keeps answering
+    normally until an owner actually takes over. All handover-state
+    setting (NEEDS_HUMAN, HandoverEvent creation, dashboard/WhatsApp/
+    email notifications) happens inside process_customer_message() /
+    notify_handover() in app/ai/service.py — this file only reads
+    ConversationState to decide whether to stay silent.
     """
     t_job_start = time.time()
     db = SessionLocal()
@@ -376,7 +395,7 @@ def process_customer_message_job(data: dict) -> None:
                         db=db,
                     )
                     print(f"[TIMING] _send_product_photos: {time.time() - t0:.2f}s")
-                except Exception as side_effect_error:
+                except Exception as side_effect_error:  # noqa: BLE001 — a crash here must never eat the actual reply below (see "one-stop shop" bug)
                     print(f"[Worker] Post-store-entry side effect failed: {side_effect_error}")
 
             _send_marketplace_reply(customer_phone, reply_text, reply_items)
@@ -413,7 +432,7 @@ def process_customer_message_job(data: dict) -> None:
         save_message(customer_id=customer.id, business_id=business.id, role="user",
                      content=message_text, language=language, db=db)
 
-        # ── Human-handover gate ──────────────────────────────────────
+        # ── Human-handover gate ──
         # Only HUMAN_ACTIVE silences AISHA — see function docstring.
         conv_state = (
             db.query(ConversationState)
@@ -716,7 +735,7 @@ def process_customer_message_job(data: dict) -> None:
         print(f"[TIMING] Twilio send: {time.time() - t0:.2f}s")
         if not sent:
             print(f"[Worker] Failed to deliver reply to {customer_phone}")
-        if result["needs_handover"]:
+        if result.get("needs_handover"):
             print(f"[Worker] Handover flagged for customer {customer_phone}")
         print(f"[TIMING] TOTAL job time: {time.time() - t_job_start:.2f}s")
         return
@@ -728,4 +747,5 @@ def process_customer_message_job(data: dict) -> None:
     finally:
         release_customer_lock(customer_phone, lock_token)
         db.close()
+        
         

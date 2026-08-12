@@ -7,9 +7,9 @@ from rq import Retry
 
 load_dotenv(find_dotenv())
 
-from app.ai.cache import is_duplicate_message  # noqa: E402
-from app.queue import message_queue  # noqa: E402
-from app.webhook.parser import extract_message_data  # noqa: E402
+from app.ai.cache import is_duplicate_message
+from app.queue import message_queue
+from app.webhook.parser import extract_message_data
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
@@ -49,6 +49,8 @@ async def receive_message(request: Request):
         )
         return Response(status_code=200)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — webhook must always ack 200 to Twilio, whatever the failure mode
         print(f"[Webhook] Unhandled error: {e}")
         return Response(status_code=200)
+    
+    

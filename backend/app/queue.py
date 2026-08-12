@@ -1,5 +1,5 @@
-# app/queue.py
 import os
+
 from redis import Redis
 from rq import Queue
 
