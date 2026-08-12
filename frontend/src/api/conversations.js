@@ -12,3 +12,6 @@ export const sendReply   = (customerId, message) =>
     method: 'POST',
     body: JSON.stringify({ message }),
   })
+export const getHandoverHistory = (customerId) =>
+  apiFetch(`/conversations/${customerId}/handover-history`)
+

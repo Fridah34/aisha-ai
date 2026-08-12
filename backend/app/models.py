@@ -186,16 +186,11 @@ class User(Base):
         "Customer", back_populates="business", cascade="all, delete-orphan"
     )
     carts: Mapped[list[Cart]] = relationship(
-    "Cart",
-    back_populates="business",
-    cascade="all, delete-orphan",
-)
-
+        "Cart", back_populates="business", cascade="all, delete-orphan"
+    )
     handover_events: Mapped[list[HandoverEvent]] = relationship(
-    "HandoverEvent",
-    back_populates="business",
-    cascade="all, delete-orphan",
-)
+        "HandoverEvent", back_populates="business", cascade="all, delete-orphan"
+    )
     # Reverse reference lookups handled safely via viewonly boundaries
     selected_conversation_states: Mapped[list[ConversationState]] = relationship(
         "ConversationState",
@@ -346,6 +341,9 @@ class Customer(Base):
     )
     conversation_states: Mapped[list[ConversationState]] = relationship(
         "ConversationState", back_populates="customer"
+    )
+    handover_events: Mapped[list[HandoverEvent]] = relationship(
+        "HandoverEvent", back_populates="customer", cascade="all, delete-orphan"
     )
     orders: Mapped[list[Order]] = relationship("Order", back_populates="customer")
     business: Mapped[User] = relationship("User", back_populates="customers")
@@ -715,3 +713,5 @@ class HandoverEvent(Base):
         waiting time is intentionally never stored."""
         now = datetime.now(self.waiting_start_time.tzinfo)
         return max(0.0, (now - self.waiting_start_time).total_seconds())
+    
+    

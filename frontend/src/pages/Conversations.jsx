@@ -3,7 +3,7 @@ import {
   MessageSquare, AlertTriangle, Phone, Clock,
   UserCheck, CheckCircle, Send, Bot, User
 } from 'lucide-react'
-import { getInbox, getThread, takeOver, resolve, sendReply } from '../api/conversations'
+import { getInbox, getThread, takeOver, resolve, sendReply, getHandoverHistory } from '../api/conversations'
 import { useWebSocket  } from '../context/WebSocketContext'
 
 const HANDOVER_PHRASE = 'Let me connect you with our team'
@@ -99,6 +99,7 @@ export default function Conversations() {
   const [sending,         setSending]         = useState(false)
   const [replyError,      setReplyError]      = useState(null)
   const [actionLoading,   setActionLoading]   = useState(false)
+  const [handoverHistory, setHandoverHistory] = useState([])
   const { isConnected, lastMessage, sendMessage } = useWebSocket()
 
   const threadEndRef = useRef(null)
@@ -131,13 +132,13 @@ export default function Conversations() {
   useEffect(() => {
     if (lastMessage?.type === 'status_change') {
       const { customer_id, new_status } = lastMessage
-      
+
       // Update status in local state
       setStatuses(prev => ({
         ...prev,
         [customer_id]: new_status
       }))
-      
+
       // If this is the selected conversation, update its status
       if (selected?.customer_id === customer_id) {
         setSelected(prev => prev ? {
@@ -145,7 +146,7 @@ export default function Conversations() {
           conversation_status: new_status
         } : null)
       }
-      
+
       // Refresh inbox in background
       getInbox()
         .then(data => {
@@ -154,7 +155,7 @@ export default function Conversations() {
         })
         .catch(() => {})
     }
-    
+
     if (lastMessage?.type === 'new_message') {
       // If this is the selected conversation, refresh the thread
       if (selected?.customer_id === lastMessage.customer_id) {
@@ -201,6 +202,7 @@ export default function Conversations() {
   function openThread(customer) {
     setSelected(customer)
     setThread(null)
+    setHandoverHistory([])
     setReplyText('')
     setReplyError(null)
     setLoadingThread(true)
@@ -215,6 +217,10 @@ export default function Conversations() {
       })
       .catch(() => setThread(null))
       .finally(() => setLoadingThread(false))
+
+    getHandoverHistory(customer.customer_id)
+      .then(setHandoverHistory)
+      .catch(() => setHandoverHistory([]))
   }
 
   const refreshThread = () => {
@@ -230,6 +236,10 @@ export default function Conversations() {
       })
       .catch(() => setThread(null))
       .finally(() => setLoadingThread(false))
+
+    getHandoverHistory(selected.customer_id)
+      .then(setHandoverHistory)
+      .catch(() => setHandoverHistory([]))
   }
 
   async function handleTakeOver() {
@@ -251,6 +261,11 @@ export default function Conversations() {
     try {
       await resolve(selected.customer_id)
       setStatuses(prev => ({ ...prev, [selected.customer_id]: 'resolved' }))
+      // Refresh so resolved_at shows up and the "needs attention" list clears
+      // immediately instead of waiting for the next openThread/refreshThread.
+      getHandoverHistory(selected.customer_id)
+        .then(setHandoverHistory)
+        .catch(() => {})
     } catch (e) {
       console.error('Resolve failed', e)
     } finally {
@@ -297,6 +312,7 @@ export default function Conversations() {
   const currentStatus = selected ? (statuses[selected.customer_id] ?? 'ai_active') : null
   const isHumanActive = currentStatus === 'human_active'
   const isResolved    = currentStatus === 'resolved'
+  const openHandovers  = handoverHistory.filter(h => !h.resolved_at)
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -439,11 +455,25 @@ export default function Conversations() {
                 <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg
                                 bg-red-50 border border-red-100">
                   <AlertTriangle size={13} className="text-red-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-red-600">
-                    AISHA could not handle this — customer needs your direct reply.
-                    Click <strong>Take over</strong> to start replying, then{' '}
-                    <strong>Mark resolved</strong> when done so AISHA resumes.
-                  </p>
+                  <div className="flex-1">
+                    <p className="text-xs text-red-600">
+                      AISHA could not handle {openHandovers.length > 1 ? 'these questions' : 'this question'} — customer needs your direct reply.
+                    </p>
+                    {openHandovers.length > 0 && (
+                      <ul className="mt-1.5 space-y-1">
+                        {openHandovers.map(h => (
+                          <li key={h.id} className="text-xs text-red-700 bg-white/60 rounded px-2 py-1">
+                            "{h.trigger_message}"
+                            <span className="text-red-400 ml-1.5">· {timeAgo(h.created_at)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-xs text-red-600 mt-1.5">
+                      Click <strong>Take over</strong> to start replying, then{' '}
+                      <strong>Mark resolved</strong> when done so AISHA resumes.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -587,7 +617,7 @@ export default function Conversations() {
       </div>
     </div>
   )
-}     
+}
 
                         return null
                       })}
@@ -670,3 +700,4 @@ export default function Conversations() {
     </div>
   )
 }
+

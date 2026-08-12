@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import time as _time
 import uuid
 
 import redis
@@ -11,11 +12,11 @@ load_dotenv()
 
 # ─── CONNECTION . We initialize Redis once when the module loads Every function reuses this single connection-return None silently — the system falls back to PostgreSQL automatically
 try:
-    redis_client = redis.from_url(
-        os.getenv("REDIS_URL", "redis://localhost:6379"),
-        decode_responses=True,
-        ssl_cert_reqs=None,
-    )
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    if redis_url.startswith("rediss://"):
+        redis_client = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs=None)
+    else:
+        redis_client = redis.from_url(redis_url, decode_responses=True)
     redis_client.ping()
     print("Redis Connected successfully")
     REDIS_AVAILABLE = True
@@ -23,6 +24,9 @@ except Exception as e: # noqa: BLE001
     print(f"Redis not available: {e} - running without cache")
     REDIS_AVAILABLE = False
     redis_client = None
+
+
+LOCK_TTL_SECONDS = 30
 
 
 # ─── PROMPT VERSIONING ─────────────────────────────────────────────────────
@@ -38,6 +42,81 @@ def get_prompt_version() -> str:
     return hashlib.md5(build_system_prompt.__code__.co_code).hexdigest()[:8]
 
 
+def acquire_customer_lock(
+    customer_phone: str, timeout_seconds: float = 60, ttl_seconds: int = LOCK_TTL_SECONDS
+) -> str | None:
+    """Per-customer mutex so two jobs for the same phone number can never
+    process concurrently and race on MarketplaceSession state — this is
+    what actually enforces ordering, since RQ itself does not guarantee
+    two jobs for the same customer run one-at-a-time if more than one
+    worker process is running.
+
+    Uses SET NX EX (atomic in Redis) so two workers picking up jobs at
+    the same instant can't both believe they hold the lock.
+
+    Blocks up to timeout_seconds, polling every 200ms, then gives up and
+    returns None — the caller should treat that as "something is stuck",
+    not normal contention, since 60s of a lock held straight through is
+    far longer than any single message should ever take to process.
+
+    Returns a random token (proof of ownership — release_customer_lock
+    checks it, so it can never delete a DIFFERENT job's lock acquired
+    after ours expired) or "no-redis" if Redis is unavailable, matching
+    this file's fail-open philosophy elsewhere."""
+    if not REDIS_AVAILABLE:
+        return "no-redis"
+    token = str(uuid.uuid4())
+    key = f"lock:customer:{customer_phone}"
+    deadline = _time.monotonic() + timeout_seconds
+    while _time.monotonic() < deadline:
+        try:
+            if redis_client.set(key, token, nx=True, ex=ttl_seconds):
+                return token
+        except Exception as e:  # noqa: BLE001
+            print(f"Redis lock acquire error: {e}")
+            return "no-redis"
+        _time.sleep(0.2)
+    return None
+
+
+def release_customer_lock(customer_phone: str, token: str) -> None:
+    """Releases the lock only if we still hold it. A plain DEL would risk
+    deleting a DIFFERENT job's lock in the case where ours already
+    expired (TTL hit) and a new job grabbed it in the meantime — the Lua
+    script makes the check-and-delete atomic so that race can't happen."""
+    if not REDIS_AVAILABLE or token == "no-redis":
+        return
+    key = f"lock:customer:{customer_phone}"
+    lua_release = """
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+    """
+    try:
+        redis_client.eval(lua_release, 1, key, token)
+    except Exception as e:  # noqa: BLE001
+        print(f"Redis lock release error: {e}")
+
+
+def is_duplicate_message(message_sid: str, ttl_seconds: int = 86400) -> bool:
+    """True if this Twilio MessageSid has already been claimed once.
+    SET NX returns False when the key already existed — meaning we've
+    seen this exact delivery before, almost always a Twilio retry.
+    Caller should skip enqueueing and just return 200. TTL (24h) only
+    needs to outlast Twilio's own retry window, which is much shorter."""
+    if not REDIS_AVAILABLE or not message_sid:
+        return False
+    key = f"processed_msg:{message_sid}"
+    try:
+        was_new = redis_client.set(key, "1", nx=True, ex=ttl_seconds)
+        return not was_new
+    except Exception as e:  # noqa: BLE001
+        print(f"Redis dedup check error: {e}")
+        return False
+    
+    
 # ─── BUSINESS PROMPT CACHE ────────────────────────────────────────────────────
 # The business prompt contains the business name, all products,
 # and the knowledge base — it almost never changes.
@@ -270,3 +349,5 @@ def clear_active_business(customer_phone: str) -> None:
         redis_client.delete(key)
     except Exception as e:  # noqa: BLE001
         print(f"Redis active business delete error: {e}")
+        
+        
