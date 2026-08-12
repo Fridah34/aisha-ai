@@ -5,7 +5,6 @@ import enum
 import uuid
 from datetime import datetime
 
-from app.database import Base
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -22,6 +21,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database import Base
 
 
 class WikiChunk(Base):

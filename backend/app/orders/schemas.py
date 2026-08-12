@@ -2,8 +2,9 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from app.models import OrderStatus
 from pydantic import BaseModel
+
+from app.models import OrderStatus
 
 
 class OrderItemResponse(BaseModel):

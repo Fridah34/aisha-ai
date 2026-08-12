@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import Sequence
+
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Import custom hierarchical document slicing components
 from app.knowledge_base.chunking import (
@@ -32,8 +35,6 @@ from app.knowledge_base.security import (
     sanitize_untrusted_text,
 )
 from app.knowledge_base.tenancy import TenantFileResolver
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 # Establish default global system tracking constraints paths
 SYSTEM_PROMPT_PATH = Path("knowledge_base/system_prompts/aisha_voice.txt")
@@ -44,7 +45,6 @@ DEFAULT_CONVERSATION_LIMIT: int = 10
 class IngestionRejectedError(ValueError):
     """Triggered when an uploaded corporate asset fails raw regex safety checks."""
 
-    pass
 
 
 @lru_cache(maxsize=1)

@@ -11,10 +11,11 @@ Usage:
     python app/scripts/check_approval_status.py
 """
 
-import os
 import json
+import os
+
 import requests
-from dotenv import load_dotenv, find_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 

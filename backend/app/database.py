@@ -6,13 +6,13 @@ import re
 from collections.abc import AsyncGenerator, Generator
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-# Import centralized application settings
-from app.config import settings
-
 # Import database core engines and session managers
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+# Import centralized application settings
+from app.config import settings
 
 # ==============================================================================
 # LOGGING SETUP
@@ -179,7 +179,6 @@ engine = sync_engine
 
 class Base(DeclarativeBase):
     """Modern DeclarativeBase subclass mapping python models to database tables cleanly."""
-    pass
 
 
 # ==============================================================================
@@ -195,4 +194,12 @@ def get_db() -> Generator[Session, None, None]:
     try:
         yield db
     finally:
-        db.close()
+       
+        try:
+            db.close()
+        except Exception:
+            logger.warning(
+                "Ignoring error while closing DB session (connection likely "
+                "already dropped by the server)",
+                exc_info=True,
+            )

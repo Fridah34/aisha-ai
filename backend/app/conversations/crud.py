@@ -4,9 +4,10 @@ pure SQLAlchemy
 
 import uuid
 
-from app.models import Conversation, ConversationState, Customer, HandoverStatus
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from app.models import Conversation, ConversationState, Customer, HandoverStatus
 
 
 def get_inbox(db: Session, business_id: uuid.UUID) -> list[dict]:

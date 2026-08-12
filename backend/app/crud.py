@@ -1,8 +1,8 @@
 import uuid
-from typing import Optional
+
+from sqlalchemy.orm import Session
 
 from app.models import User
-from sqlalchemy.orm import Session
 
 # ==================================================================================
 #                       USER & AUTHENTICATION OPERATIONS
@@ -33,7 +33,7 @@ def create_user(
 # ========== READ OPERATIONS==========
 
 
-def get_user_by_email(db: Session, email: str) -> Optional[User]:
+def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email).first()
 
 
@@ -44,7 +44,7 @@ def get_all_users(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
 # ========== UPDATE OPERATIONS==========
 
 
-def update_user(db: Session, user_id: uuid.UUID, **kwargs) -> Optional[User]:
+def update_user(db: Session, user_id: uuid.UUID, **kwargs) -> User | None:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return None
@@ -59,7 +59,7 @@ def update_user(db: Session, user_id: uuid.UUID, **kwargs) -> Optional[User]:
 # ========== DELETE OPERATIONS==========
 
 
-def delete_user(db: Session, user_id: uuid.UUID) -> Optional[User]:
+def delete_user(db: Session, user_id: uuid.UUID) -> User | None:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return None

@@ -7,15 +7,17 @@ AUTH: business_id comes from the authenticated session (get_current_user), never
 import uuid
 from datetime import datetime, timezone
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
 from app.ai.service import save_message
 from app.auth.dependencies import get_current_user
 from app.conversations import crud
 from app.conversations.schemas import ConversationSummary, ConversationThread, HandoverEventOut
 from app.database import get_db
+from app.handover import HandoverService
 from app.models import ConversationState, Customer, HandoverEvent, HandoverStatus, User
 from app.webhook.client import send_text_message
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
@@ -84,6 +86,7 @@ def takeover_conversation(
         state.status = HandoverStatus.HUMAN_ACTIVE
         state.taken_over_at = datetime.now(timezone.utc)
     db.commit()
+    HandoverService.mark_accepted(db, customer_id=customer_id, business_id=current_user.id)
     return {"status": state.status.value}
 
 
@@ -120,6 +123,7 @@ def resolve_conversation(
     ).update({"resolved_at": datetime.now(timezone.utc)})
 
     db.commit()
+    HandoverService.mark_resolved(db, customer_id=customer_id, business_id=current_user.id)
     return {"status": state.status.value}
 
 

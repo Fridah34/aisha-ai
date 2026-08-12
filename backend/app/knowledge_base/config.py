@@ -9,8 +9,9 @@ frontend never has to hardcode or duplicate them.
 
 from __future__ import annotations
 
-from app.config import settings
 from fastapi import HTTPException
+
+from app.config import settings
 
 # Lowercase extensions without the leading dot — this is also the exact
 # shape returned by the `/config` endpoint's `supported_formats` field.

@@ -4,9 +4,10 @@ from __future__ import annotations
 import re
 
 import pytest
+from conftest import TENANT_A_ID
+
 from app.knowledge_base.manager import KnowledgeBaseManager
 from app.knowledge_base.schemas import PromptPayload
-from conftest import TENANT_A_ID
 
 
 @pytest.mark.asyncio

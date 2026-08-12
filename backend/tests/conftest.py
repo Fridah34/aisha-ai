@@ -7,6 +7,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pytest
+
 from app.knowledge_base.schemas import (
     ConversationTurn,
     Currency,

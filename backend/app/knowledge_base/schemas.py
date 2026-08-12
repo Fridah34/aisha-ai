@@ -7,17 +7,18 @@ from decimal import Decimal
 from enum import Enum
 from typing import Literal
 
-# Import your advanced data security tool utilities directly from your package lanes
-from app.knowledge_base.security import (
-    assert_no_embedded_secrets,
-    new_fence_tag,
-    sanitize_untrusted_text,
-)
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     field_validator,
+)
+
+# Import your advanced data security tool utilities directly from your package lanes
+from app.knowledge_base.security import (
+    assert_no_embedded_secrets,
+    new_fence_tag,
+    sanitize_untrusted_text,
 )
 
 # ==========================================================
