@@ -41,7 +41,9 @@ class NotificationScheduler:
         event_id: uuid.UUID,
     ) -> None:
         if delay_minutes <= 0:
-            asyncio.create_task(self._fire(notifier, payload, event_id, check_status=False))
+            asyncio.create_task(
+                self._fire(notifier, payload, event_id, check_status=False)
+            )
             return
 
         asyncio.create_task(

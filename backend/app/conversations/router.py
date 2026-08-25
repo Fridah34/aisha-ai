@@ -90,7 +90,9 @@ def takeover_conversation(
         state.status = HandoverStatus.HUMAN_ACTIVE
         state.taken_over_at = datetime.now(timezone.utc)
     db.commit()
-    HandoverService.mark_accepted(db, customer_id=customer_id, business_id=current_user.id)
+    HandoverService.mark_accepted(
+        db, customer_id=customer_id, business_id=current_user.id
+    )
     return {"status": state.status.value}
 
 
@@ -127,7 +129,9 @@ def resolve_conversation(
     ).update({"resolved_at": datetime.now(timezone.utc)})
 
     db.commit()
-    HandoverService.mark_resolved(db, customer_id=customer_id, business_id=current_user.id)
+    HandoverService.mark_resolved(
+        db, customer_id=customer_id, business_id=current_user.id
+    )
     return {"status": state.status.value}
 
 
@@ -165,4 +169,3 @@ def send_manual_reply(
     )
 
     return {"sent": True, "twilio_delivered": twilio_sent}
-

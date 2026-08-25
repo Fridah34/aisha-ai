@@ -21,7 +21,7 @@ ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 QUICK_REPLY_SID = os.getenv("TWILIO_QUICK_REPLY_SID")
 
-TEST_TO_NUMBER = "whatsapp:+254706040948"   # your test phone, from the logs
+TEST_TO_NUMBER = "whatsapp:+254706040948"  # your test phone, from the logs
 TEST_FROM_NUMBER = "whatsapp:+14155238886"  # the sandbox number
 
 client = Client(ACCOUNT_SID, AUTH_TOKEN)

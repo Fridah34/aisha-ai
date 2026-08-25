@@ -11,10 +11,8 @@ class TenantPathError(ValueError):
     """Triggered when a user tries to break out of their folder or sends a fake path."""
 
 
-
 class TenantNotProvisionedError(FileNotFoundError):
     """Triggered when someone tries to read files before the business folder is created."""
-
 
 
 # --- THE HIGH-SECURITY RESOLVER CLASS ---

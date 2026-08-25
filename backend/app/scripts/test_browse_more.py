@@ -29,8 +29,8 @@ AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 QUICK_REPLY_SID = os.getenv("TWILIO_QUICK_REPLY_SID")
 BROWSE_MORE_SID = os.getenv("TWILIO_BROWSE_MORE_SID")
 
-TEST_TO_NUMBER = "whatsapp:+254706040948"    # your test phone, from the logs
-TEST_FROM_NUMBER = "whatsapp:+14155238886"   # the sandbox number
+TEST_TO_NUMBER = "whatsapp:+254706040948"  # your test phone, from the logs
+TEST_FROM_NUMBER = "whatsapp:+14155238886"  # the sandbox number
 
 if not all([ACCOUNT_SID, AUTH_TOKEN, QUICK_REPLY_SID, BROWSE_MORE_SID]):
     raise RuntimeError(
@@ -69,5 +69,7 @@ message = client.messages.create(
 )
 
 print(f"\nSent — SID: {message.sid}")
-print("\nNow tap 'Browse more' on WhatsApp and check Twilio Console → "
-      "Monitor → Logs → Messaging for a new Incoming row.")
+print(
+    "\nNow tap 'Browse more' on WhatsApp and check Twilio Console → "
+    "Monitor → Logs → Messaging for a new Incoming row."
+)

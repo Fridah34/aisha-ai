@@ -62,7 +62,10 @@ def upgrade() -> None:
     op.create_table(
         "handover_events",
         sa.Column(
-            "id", sa.UUID(), primary_key=True, server_default=sa.text("gen_random_uuid()")
+            "id",
+            sa.UUID(),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
         ),
         sa.Column(
             "business_id",
@@ -114,11 +117,17 @@ def upgrade() -> None:
         ),
     )
 
-    op.create_index("ix_handover_events_business_id", "handover_events", ["business_id"])
     op.create_index(
-        "ix_handover_events_conversation_state_id", "handover_events", ["conversation_state_id"]
+        "ix_handover_events_business_id", "handover_events", ["business_id"]
     )
-    op.create_index("ix_handover_events_customer_id", "handover_events", ["customer_id"])
+    op.create_index(
+        "ix_handover_events_conversation_state_id",
+        "handover_events",
+        ["conversation_state_id"],
+    )
+    op.create_index(
+        "ix_handover_events_customer_id", "handover_events", ["customer_id"]
+    )
     op.create_index("ix_handover_events_status", "handover_events", ["status"])
 
 
@@ -126,7 +135,9 @@ def downgrade() -> None:
     """Downgrade schema."""
     op.drop_index("ix_handover_events_status", table_name="handover_events")
     op.drop_index("ix_handover_events_customer_id", table_name="handover_events")
-    op.drop_index("ix_handover_events_conversation_state_id", table_name="handover_events")
+    op.drop_index(
+        "ix_handover_events_conversation_state_id", table_name="handover_events"
+    )
     op.drop_index("ix_handover_events_business_id", table_name="handover_events")
     op.drop_table("handover_events")
     handover_event_status_enum.drop(op.get_bind(), checkfirst=True)

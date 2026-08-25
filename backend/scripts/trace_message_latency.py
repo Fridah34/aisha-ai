@@ -21,13 +21,13 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
-import redis  # noqa: E402
-from sqlalchemy import event  # noqa: E402
+import redis
+from sqlalchemy import event
 
-import app.ai.service as ai_service  # noqa: E402
-import app.flows.marketplace_flow as mflow  # noqa: E402
-import app.tasks.message_processor as mp  # noqa: E402
-from app.database import async_engine, sync_engine  # noqa: E402
+import app.ai.service as ai_service
+import app.flows.marketplace_flow as mflow
+import app.tasks.message_processor as mp
+from app.database import async_engine, sync_engine
 
 PHONE = "+254798080246"
 MESSAGE = sys.argv[1] if len(sys.argv) > 1 else "do you have black sneakers?"
@@ -121,13 +121,19 @@ redis_ms = sum(m for m, _ in redis_calls)
 
 print(f"\n{'=' * 78}\nLATENCY BREAKDOWN\n{'=' * 78}")
 print(f"{'TOTAL job wall time':<38} {total_ms:9.1f} ms")
-print(f"{'  SQL (Neon) — ' + str(len(sql_calls)) + ' queries':<38} {sql_ms:9.1f} ms  ({sql_ms / total_ms * 100:4.1f}%)")
-print(f"{'  Redis (Upstash) — ' + str(len(redis_calls)) + ' cmds':<38} {redis_ms:9.1f} ms  ({redis_ms / total_ms * 100:4.1f}%)")
+print(
+    f"{'  SQL (Neon) — ' + str(len(sql_calls)) + ' queries':<38} {sql_ms:9.1f} ms  ({sql_ms / total_ms * 100:4.1f}%)"
+)
+print(
+    f"{'  Redis (Upstash) — ' + str(len(redis_calls)) + ' cmds':<38} {redis_ms:9.1f} ms  ({redis_ms / total_ms * 100:4.1f}%)"
+)
 print(f"{'  Everything else (incl. Groq)':<38} {total_ms - sql_ms - redis_ms:9.1f} ms")
 print(f"{'  Twilio sends (STUBBED, 0 ms)':<38} {len(twilio_calls):9d} calls")
 
 conn_ms = sum(connect_calls)
-print(f"{'  DB/TLS connection setup — ' + str(len(connect_calls)) + 'x':<38} {conn_ms:9.1f} ms  (not counted in SQL above)")
+print(
+    f"{'  DB/TLS connection setup — ' + str(len(connect_calls)) + 'x':<38} {conn_ms:9.1f} ms  (not counted in SQL above)"
+)
 
 print(f"\n--- Top 12 slowest SQL queries ({len(sql_calls)} total) ---")
 for ms, stmt in sorted(sql_calls, reverse=True)[:12]:

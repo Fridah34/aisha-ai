@@ -12,4 +12,10 @@ NOTIFIERS: dict[str, Notifier] = {
     EmailNotifier.channel_key: EmailNotifier(),
 }
 
-__all__ = ["NOTIFIERS", "DashboardNotifier", "EmailNotifier", "Notifier", "WhatsAppNotifier"]
+__all__ = [
+    "NOTIFIERS",
+    "DashboardNotifier",
+    "EmailNotifier",
+    "Notifier",
+    "WhatsAppNotifier",
+]

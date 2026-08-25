@@ -20,7 +20,7 @@ class ProductCreate(BaseModel):
     description: str | None = None
     price: Decimal = Field(..., gt=0)
     is_available: bool = True
-    category_id: uuid.UUID | None =None 
+    category_id: uuid.UUID | None = None
     variant_label: str | None = None
     variant_options: str | None = None
     unit: str | None = None

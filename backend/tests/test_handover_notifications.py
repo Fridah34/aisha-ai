@@ -97,7 +97,10 @@ class TestHandoverNotificationSettingsValidation:
         assert settings.email.delay_minutes == 5
 
     def test_delay_minutes_within_range_is_valid(self):
-        assert HandoverChannelSettings(enabled=True, delay_minutes=120).delay_minutes == 120
+        assert (
+            HandoverChannelSettings(enabled=True, delay_minutes=120).delay_minutes
+            == 120
+        )
         assert HandoverChannelSettings(enabled=True, delay_minutes=0).delay_minutes == 0
 
     def test_delay_minutes_over_120_is_rejected(self):

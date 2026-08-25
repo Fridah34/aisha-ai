@@ -29,7 +29,7 @@ from rq import Worker
 # own app.queue import for the same reason.
 load_dotenv(find_dotenv())
 
-from app.queue import message_queue  # noqa: E402 — must import after load_dotenv
+from app.queue import message_queue
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,5 +38,7 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     worker = Worker([message_queue], connection=message_queue.connection)
-    print(f"[Worker] Listening on queues: {[q.name for q in worker.queues]}", flush=True)
+    print(
+        f"[Worker] Listening on queues: {[q.name for q in worker.queues]}", flush=True
+    )
     worker.work(with_scheduler=True)

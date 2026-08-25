@@ -14,13 +14,15 @@ load_dotenv()
 try:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
     if redis_url.startswith("rediss://"):
-        redis_client = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs=None)
+        redis_client = redis.from_url(
+            redis_url, decode_responses=True, ssl_cert_reqs=None
+        )
     else:
         redis_client = redis.from_url(redis_url, decode_responses=True)
     redis_client.ping()
     print("Redis Connected successfully")
     REDIS_AVAILABLE = True
-except Exception as e: # noqa: BLE001
+except Exception as e:  # noqa: BLE001
     print(f"Redis not available: {e} - running without cache")
     REDIS_AVAILABLE = False
     redis_client = None
@@ -56,7 +58,7 @@ def get_prompt_version() -> str:
     stable-per-process key, so a transient read error degrades to "cache is
     a bit stickier than usual" rather than taking the message path down.
     """
-    digest = hashlib.md5()  # noqa: S324 — cache-busting fingerprint, not a security hash
+    digest = hashlib.md5()
 
     try:
         from app.knowledge_base.manager import _resolve_system_prompt_path
@@ -91,7 +93,9 @@ def _business_prompt_key(business_id: uuid.UUID) -> str:
 
 
 def acquire_customer_lock(
-    customer_phone: str, timeout_seconds: float = 60, ttl_seconds: int = LOCK_TTL_SECONDS
+    customer_phone: str,
+    timeout_seconds: float = 60,
+    ttl_seconds: int = LOCK_TTL_SECONDS,
 ) -> str | None:
     """Per-customer mutex so two jobs for the same phone number can never
     process concurrently and race on MarketplaceSession state — this is
@@ -163,8 +167,8 @@ def is_duplicate_message(message_sid: str, ttl_seconds: int = 86400) -> bool:
     except Exception as e:  # noqa: BLE001
         print(f"Redis dedup check error: {e}")
         return False
-    
-    
+
+
 # ─── BUSINESS PROMPT CACHE ────────────────────────────────────────────────────
 # The business prompt contains the business name, all products,
 # and the knowledge base — it almost never changes.
@@ -180,7 +184,7 @@ def get_cached_business_prompt(business_id: uuid.UUID):
         return None
     try:
         return redis_client.get(_business_prompt_key(business_id))
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"Redis read error: {e}")
         return None
 
@@ -217,7 +221,9 @@ def invalidate_business_cache(business_id: uuid.UUID):
         # rolled-back deploy would then start reading again. scan_iter is used
         # instead of KEYS because Upstash/Redis KEYS blocks the whole server.
         deleted = 0
-        for key in redis_client.scan_iter(match=f"business_prompt:*:{business_id}", count=100):
+        for key in redis_client.scan_iter(
+            match=f"business_prompt:*:{business_id}", count=100
+        ):
             redis_client.delete(key)
             deleted += 1
 
@@ -225,8 +231,10 @@ def invalidate_business_cache(business_id: uuid.UUID):
         # deploy doesn't strand the old-format entry for a full hour.
         redis_client.delete(f"business_prompt:{business_id}")
 
-        print(f"✓ Cache invalidated for business {business_id} ({deleted} versioned entries)")
-    except Exception as e: # noqa: BLE001
+        print(
+            f"✓ Cache invalidated for business {business_id} ({deleted} versioned entries)"
+        )
+    except Exception as e:  # noqa: BLE001
         print(f"Redis delete error: {e}")
 
 
@@ -244,7 +252,7 @@ def invalidate_conversation_cache(
         print(
             f"Conversation cache cleared: customer {customer_id} / business {business_id}"
         )
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"Redis delete error: {e}")
 
 
@@ -315,7 +323,7 @@ def already_sent_image(
 
         return bool(exists)
 
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"[Redis] Image check error: {e}")
         return False
 
@@ -337,7 +345,7 @@ def mark_image_sent(
         key = f"img_sent:{business_id}:{customer_id}:{product_id}"
         redis_client.setex(key, ttl_seconds, "1")
         print(f"[Redis] Image marked as sent: {key}")
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"[Redis] Image mark error: {e}")
 
 
@@ -358,7 +366,7 @@ def append_to_conversation_cache(
         existing = get_cached_conversation(customer_id, business_id) or []
         existing.append(message)
         cache_conversation(customer_id, business_id, existing, ttl_seconds)
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"Redis append error: {e}")
 
 
@@ -380,7 +388,7 @@ def get_active_business(customer_phone: str):
     try:
         key = f"active_biz:{customer_phone}"
         return redis_client.get(key)
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"Redis active business read error: {e}")
         return None
 
@@ -394,7 +402,7 @@ def set_active_business(
     try:
         key = f"active_biz:{customer_phone}"
         redis_client.setex(key, ttl_seconds, str(business_id))
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(f"Redis active business write error: {e}")
 
 
@@ -407,5 +415,3 @@ def clear_active_business(customer_phone: str) -> None:
         redis_client.delete(key)
     except Exception as e:  # noqa: BLE001
         print(f"Redis active business delete error: {e}")
-        
-        

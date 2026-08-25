@@ -20,6 +20,7 @@ Revises: c4d8a1f6e9b3
 Create Date: 2026-08-24 08:15:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -27,8 +28,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '9f2c7ab41d63'
-down_revision: str | Sequence[str] | None = 'c4d8a1f6e9b3'
+revision: str = "9f2c7ab41d63"
+down_revision: str | Sequence[str] | None = "c4d8a1f6e9b3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -36,8 +37,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Upgrade schema."""
     op.add_column(
-        'marketplace_sessions',
-        sa.Column('selected_category', sa.String(length=100), nullable=True),
+        "marketplace_sessions",
+        sa.Column("selected_category", sa.String(length=100), nullable=True),
     )
 
     # Dedicated timestamp for the last_product_id freshness guard in
@@ -45,8 +46,8 @@ def upgrade() -> None:
     # touched on every inbound message so the session TTL can measure real
     # inactivity — that would have left the guard permanently satisfied.
     op.add_column(
-        'marketplace_sessions',
-        sa.Column('last_product_at', sa.DateTime(timezone=True), nullable=True),
+        "marketplace_sessions",
+        sa.Column("last_product_at", sa.DateTime(timezone=True), nullable=True),
     )
 
     # Seed it from updated_at for rows that already have a last_product_id, so
@@ -103,5 +104,5 @@ def downgrade() -> None:
           AND ms.selected_business_type IS NULL
         """
     )
-    op.drop_column('marketplace_sessions', 'last_product_at')
-    op.drop_column('marketplace_sessions', 'selected_category')
+    op.drop_column("marketplace_sessions", "last_product_at")
+    op.drop_column("marketplace_sessions", "selected_category")

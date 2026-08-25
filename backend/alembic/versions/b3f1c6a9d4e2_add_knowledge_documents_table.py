@@ -18,9 +18,7 @@ down_revision: str | Sequence[str] | None = "66ddb2c8ab4f"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-document_status_enum = sa.Enum(
-    "learning", "ready", "failed", name="document_status"
-)
+document_status_enum = sa.Enum("learning", "ready", "failed", name="document_status")
 
 
 def upgrade() -> None:
@@ -132,8 +130,8 @@ def downgrade() -> None:
     # responsible for cleaning it up on rollback.
     op.execute("DROP FUNCTION IF EXISTS update_updated_at_column();")
     op.drop_index("ix_knowledge_documents_created_at", table_name="knowledge_documents")
-    op.drop_index("ix_knowledge_documents_business_id", table_name="knowledge_documents")
+    op.drop_index(
+        "ix_knowledge_documents_business_id", table_name="knowledge_documents"
+    )
     op.drop_table("knowledge_documents")
     document_status_enum.drop(op.get_bind(), checkfirst=True)
-    
-    

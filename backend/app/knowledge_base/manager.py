@@ -57,11 +57,17 @@ logger = logging.getLogger(__name__)
 #   <backend_root>/knowledge_base/clean_wiki/
 # manager.py itself lives at <backend_root>/app/knowledge_base/manager.py
 _MODULE_DIR = Path(__file__).resolve().parent
-_BACKEND_ROOT = _MODULE_DIR.parents[1]     # .../app/knowledge_base -> .../app -> .../backend
-_REPO_ROOT = _MODULE_DIR.parents[2]        # .../app/knowledge_base -> .../app -> .../backend -> repo root
+_BACKEND_ROOT = _MODULE_DIR.parents[
+    1
+]  # .../app/knowledge_base -> .../app -> .../backend
+_REPO_ROOT = _MODULE_DIR.parents[
+    2
+]  # .../app/knowledge_base -> .../app -> .../backend -> repo root
 
 # Establish default global system tracking constraints paths
-SYSTEM_PROMPT_PATH = _BACKEND_ROOT / "knowledge_base" / "system_prompts" / "aisha_voice.txt"
+SYSTEM_PROMPT_PATH = (
+    _BACKEND_ROOT / "knowledge_base" / "system_prompts" / "aisha_voice.txt"
+)
 DEFAULT_CLEAN_WIKI_DIR = _BACKEND_ROOT / "knowledge_base" / "clean_wiki"
 
 # Tried in order by _resolve_system_prompt_path(). The second entry is the
@@ -90,7 +96,6 @@ _FALLBACK_SYSTEM_PROMPT = (
 
 class IngestionRejectedError(ValueError):
     """Triggered when an uploaded corporate asset fails raw regex safety checks."""
-
 
 
 def _holds_prompt(path: Path) -> bool:
@@ -416,5 +421,3 @@ class KnowledgeBaseManager:
             )
             for row in reversed(rows)
         ]
-        
-        

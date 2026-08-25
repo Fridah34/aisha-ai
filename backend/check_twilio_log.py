@@ -81,7 +81,7 @@ if duplicates:
     print(f"[!] {len(duplicates)} message(s) sent more than once with identical body:")
     for (to, body), count in duplicates.items():
         preview = (body or "")[:60].replace("\n", " ")
-        print(f"  {count}x to {to} — \"{preview}...\"")
+        print(f'  {count}x to {to} — "{preview}..."')
 else:
     print("No duplicate (to, body) pairs found — no obvious retry-duplication.")
 print()
@@ -92,4 +92,4 @@ for m in sorted(
     key=lambda m: m.date_sent or datetime.min.replace(tzinfo=timezone.utc),
 ):
     preview = (m.body or "")[:50].replace("\n", " ")
-    print(f"  {m.date_sent} | {m.to} | {m.status} | \"{preview}\"")
+    print(f'  {m.date_sent} | {m.to} | {m.status} | "{preview}"')

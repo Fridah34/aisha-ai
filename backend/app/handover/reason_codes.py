@@ -30,7 +30,9 @@ REASON_CODE_LABELS: dict[HandoverReasonCode, str] = {
 def reason_label(reason_code: HandoverReasonCode) -> str:
     """Human-readable label for a reason code. Frontend should always render
     this, never the raw `reason_code` value."""
-    return REASON_CODE_LABELS.get(reason_code, reason_code.value.replace("_", " ").title())
+    return REASON_CODE_LABELS.get(
+        reason_code, reason_code.value.replace("_", " ").title()
+    )
 
 
 # Keyword -> reason code, checked in order (first match wins). Mirrors the
@@ -76,7 +78,13 @@ _REASON_KEYWORDS: list[tuple[HandoverReasonCode, tuple[str, ...]]] = [
     ),
     (
         HandoverReasonCode.CUSTOMER_REQUESTED_HUMAN,
-        ("talk to a human", "speak to a person", "real person", "human agent", "ongea na mtu"),
+        (
+            "talk to a human",
+            "speak to a person",
+            "real person",
+            "human agent",
+            "ongea na mtu",
+        ),
     ),
 ]
 

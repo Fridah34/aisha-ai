@@ -64,7 +64,8 @@ def sanitize_untrusted_text(text: str) -> str:
 _SUSPICIOUS_PATTERNS = [
     # English attack variants targeting system prompt rules
     re.compile(
-        r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b", re.IGNORECASE
+        r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b",
+        re.IGNORECASE,
     ),
     re.compile(r"\bdisregard\s+(?:all\s+)?(?:previous|prior|above)\b", re.IGNORECASE),
     re.compile(r"\byou\s+are\s+now\s+(?:a|an)\b", re.IGNORECASE),
@@ -113,7 +114,6 @@ _SECRET_PATTERNS = [
 
 class EmbeddedSecretError(ValueError):
     """Triggered when corporate cryptographic data is detected inside open text buffers."""
-
 
 
 def assert_no_embedded_secrets(payload: str) -> None:

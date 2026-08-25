@@ -65,8 +65,6 @@ class HandoverEventOut(BaseModel):
     ai_summary: str | None = None
     customer_last_message: str
     created_at: datetime
-    resolved_at: datetime| None = None
+    resolved_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
-    
-    

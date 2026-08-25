@@ -57,7 +57,7 @@ BUSINESS_FLOWS = {
 def format_product_line(p: dict) -> str:
     """Formats one product into a structured line for the AI system prompt.
     Uses all available fields so AISHA can answer size/color/duration questions instead of guessing.
-"""
+    """
     line = f"- {p['name']}: Ksh {p['price']}"
 
     if p.get("unit"):
@@ -249,7 +249,6 @@ def build_system_prompt(
         "- Do not discuss politics, religion, or anything unrelated to the business\n"
         "- If directly asked whether you are an AI, be honest\n"
         "- If you receive a voice note or unsupported message type,ask the customer to type their question\n"
-        
         "IMAGES:\n"
         "- You cannot personally attach images, but the system automatically sends a "
         "product photo when you mention a product by its exact name from the list above.\n"

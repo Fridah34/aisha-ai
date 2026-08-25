@@ -8,7 +8,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 
-def calculate_waiting_seconds(waiting_start_time: datetime, *, now: datetime | None = None) -> float:
+def calculate_waiting_seconds(
+    waiting_start_time: datetime, *, now: datetime | None = None
+) -> float:
     """Seconds elapsed since `waiting_start_time`."""
     reference = now or datetime.now(timezone.utc)
     if waiting_start_time.tzinfo is None:
@@ -16,7 +18,9 @@ def calculate_waiting_seconds(waiting_start_time: datetime, *, now: datetime | N
     return max(0.0, (reference - waiting_start_time).total_seconds())
 
 
-def format_waiting_duration(waiting_start_time: datetime, *, now: datetime | None = None) -> str:
+def format_waiting_duration(
+    waiting_start_time: datetime, *, now: datetime | None = None
+) -> str:
     """Human-readable waiting duration, e.g. "7 minutes", "1 hour 12 minutes".
 
     Matches the granularity requested for the dashboard/notification copy —

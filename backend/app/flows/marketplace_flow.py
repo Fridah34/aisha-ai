@@ -67,10 +67,23 @@ STALE_PHOTO_WINDOW = timedelta(hours=24)
 
 SWITCH_KEYWORDS = {"switch", "switch store", "change store", "menu", "other shops"}
 CHECKOUT_KEYWORDS = {"checkout", "check out", "done", "complete order", "finish order"}
-STATUS_KEYWORDS = {"status","order status","my order","track order","track my order"}
+STATUS_KEYWORDS = {
+    "status",
+    "order status",
+    "my order",
+    "track order",
+    "track my order",
+}
 PHOTO_KEYWORDS = {
-    "photo", "picture", "pic", "image", "see it", "show me",
-    "how does it look", "picha", "onyesha picha",
+    "photo",
+    "picture",
+    "pic",
+    "image",
+    "see it",
+    "show me",
+    "how does it look",
+    "picha",
+    "onyesha picha",
 }
 
 # Explicit human-handover requests. Checked BEFORE any deterministic
@@ -81,15 +94,41 @@ PHOTO_KEYWORDS = {
 # criteria (no complaint/scam wording here) to keep false positives low
 # inside tight, numeric/size-driven deterministic flows.
 HUMAN_HANDOVER_KEYWORDS = {
-    "human", "human agent", "a human", "real person", "real human",
-    "talk to a human", "speak to a human", "talk to human", "speak to human",
-    "talk to someone", "speak to someone", "talk to a person", "speak to a person",
-    "talk to the owner", "speak to the owner", "talk to owner", "speak to owner",
-    "the owner", "business owner", "manager", "customer service", "customer care",
-    "representative", "an agent", "human agent please", "connect me with", "connect me to",
+    "human",
+    "human agent",
+    "a human",
+    "real person",
+    "real human",
+    "talk to a human",
+    "speak to a human",
+    "talk to human",
+    "speak to human",
+    "talk to someone",
+    "speak to someone",
+    "talk to a person",
+    "speak to a person",
+    "talk to the owner",
+    "speak to the owner",
+    "talk to owner",
+    "speak to owner",
+    "the owner",
+    "business owner",
+    "manager",
+    "customer service",
+    "customer care",
+    "representative",
+    "an agent",
+    "human agent please",
+    "connect me with",
+    "connect me to",
     # Kiswahili
-    "binadamu", "wakala", "meneja", "mmiliki", "ongea na mtu",
-    "ongea na binadamu", "mtu halisi",
+    "binadamu",
+    "wakala",
+    "meneja",
+    "mmiliki",
+    "ongea na mtu",
+    "ongea na binadamu",
+    "mtu halisi",
 }
 
 NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
@@ -104,27 +143,68 @@ ORDER_STATUS_LABELS = {
 
 BUSINESS_QUESTION_KEYWORDS = (
     # stock / variant availability
-    "do you have", "is there a", "any other color", "any other colour",
-    "different color", "different colour", "any in", "got any", "any chance of",
+    "do you have",
+    "is there a",
+    "any other color",
+    "any other colour",
+    "different color",
+    "different colour",
+    "any in",
+    "got any",
+    "any chance of",
     # store location
-    "where is", "where are you", "your location", "store located", "located",
+    "where is",
+    "where are you",
+    "your location",
+    "store located",
+    "located",
     # delivery / shipping coverage
-    "where do you deliver", "do you deliver", "deliver to", "delivery area",
-    "where do you guys deliver", "shipping to",
-
+    "where do you deliver",
+    "do you deliver",
+    "deliver to",
+    "delivery area",
+    "where do you guys deliver",
+    "shipping to",
     # hours of operation
-    "what time", "opening hours", "operating hours", "business hours",
-    "closing time", "open until", "still open", "are you open",
-    "when do you open", "when do you close", "what time do you open",
-    "what time do you close", "your hours",
+    "what time",
+    "opening hours",
+    "operating hours",
+    "business hours",
+    "closing time",
+    "open until",
+    "still open",
+    "are you open",
+    "when do you open",
+    "when do you close",
+    "what time do you open",
+    "what time do you close",
+    "your hours",
 )
 
 QUESTION_STARTERS = (
-    "do you", "does it", "does he", "does she",
-    "is there", "is it", "is that", "is this",
-    "are you", "are there",
-    "can i", "can you", "could i", "could you", "will you", "would you",
-    "what", "where", "when", "why", "how", "which", "who",
+    "do you",
+    "does it",
+    "does he",
+    "does she",
+    "is there",
+    "is it",
+    "is that",
+    "is this",
+    "are you",
+    "are there",
+    "can i",
+    "can you",
+    "could i",
+    "could you",
+    "will you",
+    "would you",
+    "what",
+    "where",
+    "when",
+    "why",
+    "how",
+    "which",
+    "who",
 )
 
 
@@ -177,6 +257,7 @@ def is_business_question(message: str) -> bool:
 def friendly_status(status_value: str) -> str:
     return ORDER_STATUS_LABELS.get(status_value, status_value.replace("_", " ").title())
 
+
 PAGE_SIZE = 9
 MORE_OPTIONS_LABEL = "More options"
 
@@ -207,6 +288,7 @@ def _resolve_paginated_choice(
         return None, _menu_items_for_offset(all_items, next_offset)
 
     return choice, None
+
 
 def is_photo_request(message: str) -> bool:
     text = message.strip().lower()
@@ -292,9 +374,15 @@ def get_or_create_marketplace_session(
     # migration might not be. Treat a missing timestamp as "not stale" so a
     # data quirk can never wipe a live session.
     last_seen = session.updated_at
-    has_state = session.pending_action is not None or session.selected_business_id is not None
+    has_state = (
+        session.pending_action is not None or session.selected_business_id is not None
+    )
 
-    if last_seen is not None and has_state and (now - last_seen) > MARKETPLACE_SESSION_TTL:
+    if (
+        last_seen is not None
+        and has_state
+        and (now - last_seen) > MARKETPLACE_SESSION_TTL
+    ):
         idle_minutes = int((now - last_seen).total_seconds() // 60)
         print(
             f"[Marketplace] Session for {phone_number} idle {idle_minutes}m "
@@ -574,9 +662,7 @@ def resolve_product_choice(
     # SOMEWHERE inside the (longer) customer message.
     text_clean = message.strip().lower()
     if text_clean:
-        partial_matches = [
-            p for p in products if p.name.strip().lower() in text_clean
-        ]
+        partial_matches = [p for p in products if p.name.strip().lower() in text_clean]
         if len(partial_matches) == 1:
             return partial_matches[0]
         if len(partial_matches) > 1:
@@ -591,10 +677,15 @@ def resolve_product_choice(
 
     return None
 
-def _resolve_photo_target(marketplace_session, business_id: uuid.UUID, message_text: str, db: Session) -> Product | None:
+
+def _resolve_photo_target(
+    marketplace_session, business_id: uuid.UUID, message_text: str, db: Session
+) -> Product | None:
     matched_product = resolve_product_choice(
-        business_id=business_id, category_name=marketplace_session.selected_category,
-        message=message_text, db=db,
+        business_id=business_id,
+        category_name=marketplace_session.selected_category,
+        message=message_text,
+        db=db,
     )
     if matched_product:
         return matched_product
@@ -661,11 +752,11 @@ def resolve_size_choice(text: str, variant_options: str) -> str | None:
     for s in sizes:
         if re.search(rf"\b{re.escape(s.lower())}\b", text_clean):
             return s
-        
-    #Size labels like "38 - 40" describe a numeric range. A bare
+
+    # Size labels like "38 - 40" describe a numeric range. A bare
     # number reply ("38") should resolve to whichever range contains
     # it, since no real customer will retype " 38 -40 " verbatim.
-    if text_clean.isdigit ():
+    if text_clean.isdigit():
         num = int(text_clean)
         for s in sizes:
             m = re.match(r"(\d+)\s*-\s*(\d+)", s)
@@ -675,6 +766,7 @@ def resolve_size_choice(text: str, variant_options: str) -> str | None:
                     return s
 
     return None
+
 
 def find_mentioned_alternate_variant(
     message: str,
@@ -700,13 +792,17 @@ def find_mentioned_alternate_variant(
     (e.g. a business-hours question) — callers should check
     is_business_question() separately for those.
     """
-    current_available = {s.strip().lower() for s in _parse_sizes(current_product_options)}
+    current_available = {
+        s.strip().lower() for s in _parse_sizes(current_product_options)
+    }
 
     products = get_products_for_business_category(db, business_id, category_name)
     catalog_terms: set[str] = set()
     for p in products:
         if p.variant_options:
-            catalog_terms.update(s.strip().lower() for s in _parse_sizes(p.variant_options))
+            catalog_terms.update(
+                s.strip().lower() for s in _parse_sizes(p.variant_options)
+            )
 
     text_clean = message.strip().lower()
     for term in catalog_terms:
@@ -716,6 +812,7 @@ def find_mentioned_alternate_variant(
             return term
 
     return None
+
 
 def parse_quantity(text: str) -> int | None:
     """Reads a 1–100 quantity from a customer reply, or None.
@@ -850,7 +947,9 @@ def create_orders_from_cart(
         try:
             product_id = uuid.UUID(str(raw_product_id))
         except (ValueError, AttributeError, TypeError):
-            print(f"[Checkout] Dropping cart line with malformed product_id {raw_product_id!r}")
+            print(
+                f"[Checkout] Dropping cart line with malformed product_id {raw_product_id!r}"
+            )
             continue
 
         product = (
@@ -994,6 +1093,7 @@ def get_latest_orders_for_business(
         business_id=business_id,
     )
 
+
 def format_order_status(orders: list[Order]) -> str:
     if not orders:
         return (
@@ -1008,25 +1108,36 @@ def format_order_status(orders: list[Order]) -> str:
     )
     lines = [f"Order #{ref} — {orders[0].snapshot_business_name}", ""]
     for o in orders:
-        lines.append(f"- {o.quantity}x {o.snapshot_product_name} — _{friendly_status(o.status.value)}_")
+        lines.append(
+            f"- {o.quantity}x {o.snapshot_product_name} — _{friendly_status(o.status.value)}_"
+        )
     lines.append("\n_Reply with another order reference to check a different order._")
     return "\n".join(lines)
+
 
 def _send_status_notification(order: Order, message: str) -> None:
     """Shared phone validation + send step for every order-status
     notification (paid, shipped, delivered, ...). Centralizing this means
     a phone-handling fix (like the to_e164 normalization) only has to
     happen in one place, not once per notify_* function."""
-    phone = to_e164(order.snapshot_customer_phone) if order.snapshot_customer_phone else None
+    phone = (
+        to_e164(order.snapshot_customer_phone)
+        if order.snapshot_customer_phone
+        else None
+    )
     if not phone:
-        print(f"[order_notification] Skipped — invalid/missing phone for order {order.id}: {order.snapshot_customer_phone!r}")
+        print(
+            f"[order_notification] Skipped — invalid/missing phone for order {order.id}: {order.snapshot_customer_phone!r}"
+        )
         return
     send_text_message(to_phone=phone, message=message)
+
 
 def notify_shipping(order: Order, business: User, db: Session) -> None:
     location_line = (
         f"\nYou can collect it at: {business.delivery_location}"
-        if business.delivery_location else ""
+        if business.delivery_location
+        else ""
     )
     message = (
         f"📦 Update: *{order.snapshot_product_name}* from your order "
@@ -1036,6 +1147,7 @@ def notify_shipping(order: Order, business: User, db: Session) -> None:
         "_Reply 'status' anytime to see all your items._"
     )
     _send_status_notification(order, message)
+
 
 def notify_payment_received(order: Order, business: User, db: Session) -> None:
     """Fires the moment an item moves into PAID — reassures the customer
@@ -1059,7 +1171,8 @@ def notify_delivered(order: Order, business: User, db: Session) -> None:
     actually doing doorstep drop-offs instead of pickup points."""
     location_line = (
         f"\nCollected from / delivered to: {business.delivery_location}"
-        if business.delivery_location else ""
+        if business.delivery_location
+        else ""
     )
     message = (
         f"🎉 *{order.snapshot_product_name}* from your order "
@@ -1068,6 +1181,7 @@ def notify_delivered(order: Order, business: User, db: Session) -> None:
         "Thanks for shopping with us — reply 'menu' anytime to shop again."
     )
     _send_status_notification(order, message)
+
 
 def notify_cancelled(order: Order, business: User, db: Session, was_paid: bool) -> None:
     """was_paid reflects the item's status *before* cancellation — passed
@@ -1081,7 +1195,8 @@ def notify_cancelled(order: Order, business: User, db: Session, was_paid: bool) 
     refund_line = (
         "\n\nSince payment was already received for this item, we'll be "
         "in touch shortly about your refund."
-        if was_paid else ""
+        if was_paid
+        else ""
     )
     message = (
         f"❌ Update: *{order.snapshot_product_name}* from your order "
@@ -1092,10 +1207,7 @@ def notify_cancelled(order: Order, business: User, db: Session, was_paid: bool) 
     _send_status_notification(order, message)
 
 
-
-def load_session_product(
-    session: MarketplaceSession, db: Session
-) -> Product | None:
+def load_session_product(session: MarketplaceSession, db: Session) -> Product | None:
     """Loads session.selected_product_id, scoped to session.selected_business_id.
 
     Replaces `db.query(Product).get(session.selected_product_id)`, which looked
@@ -1411,9 +1523,7 @@ def handle_marketplace_step(
 
         name, contact = parse_name_and_contact(message)
         if not contact:
-            contact = (
-                session.phone_number
-            )
+            contact = session.phone_number
 
         # Confirm the store still exists and is active before creating orders
         # against it. This used to be db.query(User).get(...) with no active
@@ -1428,8 +1538,10 @@ def handle_marketplace_step(
         if business is None:
             reset_to_menu(session, db)
             return (
-                "Sorry, that store is no longer available. Reply 'menu' to "
-                "browse other stores.",
+                (
+                    "Sorry, that store is no longer available. Reply 'menu' to "
+                    "browse other stores."
+                ),
                 None,
             )
 

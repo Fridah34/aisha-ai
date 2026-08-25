@@ -9,13 +9,16 @@ models.Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
 
+
 async def run_tests():
     async with async_session_factory() as async_db:
         try:
             # First create a test business owner in the database
             # Check if test user already exists
             test_user = (
-                db.query(models.User).filter(models.User.email == "test@zawadi.com").first()
+                db.query(models.User)
+                .filter(models.User.email == "test@zawadi.com")
+                .first()
             )
 
             if not test_user:
@@ -118,7 +121,9 @@ async def run_tests():
                 db=db,
                 async_db=async_db,
             )
-            print("Customer: I would like to order the Nike Air Force 1 in size 9 please")
+            print(
+                "Customer: I would like to order the Nike Air Force 1 in size 9 please"
+            )
             print("AISHA:", result4["response"])
             print("Response language:", result4["response_language"])
 
@@ -151,6 +156,7 @@ async def run_tests():
 
         finally:
             db.close()
+
 
 if __name__ == "__main__":
     asyncio.run(run_tests())

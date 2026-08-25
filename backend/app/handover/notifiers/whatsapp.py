@@ -29,10 +29,10 @@ class WhatsAppNotifier(Notifier):
             return False
 
         message = (
-            f"\U0001F514 Handover needed ({payload.reason_label})\n"
+            f"\U0001f514 Handover needed ({payload.reason_label})\n"
             f"Customer: {payload.customer_name or payload.customer_phone}\n"
             f"Waiting: {payload.waiting_time_label}\n"
-            f"Message: \"{payload.customer_last_message}\""
+            f'Message: "{payload.customer_last_message}"'
         )
 
         try:

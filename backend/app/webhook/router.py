@@ -42,7 +42,9 @@ async def receive_message(request: Request):
 
         sw.split("webhook_received")
 
-        print(f"[Webhook] Message from {data['phone_number']}: {data.get('message_text')}")
+        print(
+            f"[Webhook] Message from {data['phone_number']}: {data.get('message_text')}"
+        )
 
         # Carried into the worker process so it can report queue wait against
         # the same trace_id — the two halves run in different containers.
@@ -61,5 +63,3 @@ async def receive_message(request: Request):
     except Exception as e:  # noqa: BLE001 — webhook must always ack 200 to Twilio, whatever the failure mode
         print(f"[Webhook] Unhandled error: {e}")
         return Response(status_code=200)
-    
-    

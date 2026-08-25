@@ -189,9 +189,9 @@ def login(
         httponly=True,
         secure=IS_PRODUCTION,
         samesite="lax",
-        max_age=60 * 60 * 3 ,
+        max_age=60 * 60 * 3,
     )
-    
+
     refresh_token = refresh_access_token(data={"sub": user.email})
     response.set_cookie(
         key="refresh_token",
@@ -200,7 +200,7 @@ def login(
         secure=IS_PRODUCTION,
         samesite="lax",
         max_age=60 * 60 * 24,  # 24hours , matches refresh_access_token()
-)
+    )
     return {"user": UserResponse.model_validate(user)}
 
 

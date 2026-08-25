@@ -15,12 +15,28 @@ OPENERS = {
     "product_pick": ["Great choice!", "Nice pick!", "Good choice!"],
     "confirm_add": ["Added", "Got it —", "🛒 Added"],
     "apology": ["Sorry,", "Hmm,", "Sorry —"],
-    "invalid_size": ["Please choose one of:", "That's not quite it — please choose one of:", "Please pick one of:"],
+    "invalid_size": [
+        "Please choose one of:",
+        "That's not quite it — please choose one of:",
+        "Please pick one of:",
+    ],
     "no_photo": ["Sorry,", "Ah,", "Sorry —"],
-    "empty_cart": ["Your cart is empty.", "Looks like your cart's empty.", "Your cart is empty right now."],
+    "empty_cart": [
+        "Your cart is empty.",
+        "Looks like your cart's empty.",
+        "Your cart is empty right now.",
+    ],
     "ask_checkout_info": ["Almost there!", "Just about done!", "One more step!"],
-    "order_confirmed": ["Your order has been placed ✅", "Order confirmed ✅", "You're all set — order placed ✅"],
-    "store_gone": ["That store isn't available anymore.", "Hmm, that store isn't available right now.", "That store's no longer active."],
+    "order_confirmed": [
+        "Your order has been placed ✅",
+        "Order confirmed ✅",
+        "You're all set — order placed ✅",
+    ],
+    "store_gone": [
+        "That store isn't available anymore.",
+        "Hmm, that store isn't available right now.",
+        "That store's no longer active.",
+    ],
     # CHANGED: new opener for the "customer named a variant we don't stock
     # on this product" case — deliberately separate from "apology" so this
     # state can be retuned independently later without affecting other
@@ -66,7 +82,9 @@ CLOSERS = {
 }
 
 
-def compose(*, opener_key: str | None, closer_key: str | None = None, facts: str = "") -> str:
+def compose(
+    *, opener_key: str | None, closer_key: str | None = None, facts: str = ""
+) -> str:
     """facts is a pre-built, already-correct string (price/product/qty/
     variant options formatted from real DB data before this is called) —
     composition only varies the wrapper text around it, never touches the
@@ -85,7 +103,11 @@ def compose(*, opener_key: str | None, closer_key: str | None = None, facts: str
       size choice, no-photo-available) that don't need a follow-up
       prompt of their own.
     """
-    opener = random.choice(OPENERS["apology"]) if opener_key is None else random.choice(OPENERS[opener_key])
+    opener = (
+        random.choice(OPENERS["apology"])
+        if opener_key is None
+        else random.choice(OPENERS[opener_key])
+    )
     closer = random.choice(CLOSERS[closer_key]) if closer_key else None
 
     # Legacy shape — preserves exact output of the four states already wired.
@@ -94,4 +116,3 @@ def compose(*, opener_key: str | None, closer_key: str | None = None, facts: str
 
     body = f"{opener} {facts}" if facts else opener
     return f"{body}\n\n{closer}" if closer else body
-

@@ -130,7 +130,11 @@ class KnowledgeDocument(Base):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
 
     status: Mapped[DocumentStatus] = mapped_column(
-        EnumSQL(DocumentStatus, name="document_status", values_callable=lambda enum_cls: [item.value for item in enum_cls]),
+        EnumSQL(
+            DocumentStatus,
+            name="document_status",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
         default=DocumentStatus.LEARNING,
     )

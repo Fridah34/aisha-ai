@@ -151,9 +151,9 @@ class User(Base):
         nullable=False,
         default=lambda: DEFAULT_HANDOVER_NOTIFICATIONS,
         server_default=text(
-            "'{\"dashboard\": {\"enabled\": true, \"delay_minutes\": 0}, "
-            "\"whatsapp\": {\"enabled\": true, \"delay_minutes\": 0}, "
-            "\"email\": {\"enabled\": true, \"delay_minutes\": 5}}'::json"
+            '\'{"dashboard": {"enabled": true, "delay_minutes": 0}, '
+            '"whatsapp": {"enabled": true, "delay_minutes": 0}, '
+            '"email": {"enabled": true, "delay_minutes": 5}}\'::json'
         ),
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -233,9 +233,7 @@ class Category(Base):
     )
 
     business: Mapped[User] = relationship("User", back_populates="categories")
-    products: Mapped[list[Product]] = relationship(
-        "Product", back_populates="category"
-    )
+    products: Mapped[list[Product]] = relationship("Product", back_populates="category")
 
     # Reverse tracking for marketplace navigation metrics
     conversation_states: Mapped[list[ConversationState]] = relationship(
@@ -497,7 +495,7 @@ class MarketplaceSession(Base):
         nullable=True,
         index=True,
     )
-    
+
     last_product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),
@@ -520,10 +518,9 @@ class MarketplaceSession(Base):
     )
 
     last_product: Mapped[Product | None] = relationship(
-        "Product", foreign_keys= [last_product_id]
+        "Product", foreign_keys=[last_product_id]
     )
-    
-    
+
     selected_product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),
@@ -667,6 +664,7 @@ class ChatMessage(Base):
 
     business: Mapped[User] = relationship("User", back_populates="chat_messages")
 
+
 # ==============================================================================
 # HANDOVER EVENT
 # ==============================================================================
@@ -747,5 +745,3 @@ class HandoverEvent(Base):
         waiting time is intentionally never stored."""
         now = datetime.now(self.waiting_start_time.tzinfo)
         return max(0.0, (now - self.waiting_start_time).total_seconds())
-    
-    

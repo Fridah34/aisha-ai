@@ -78,7 +78,7 @@ def update_settings(
 
     if updates.knowledge_base_text is not None:
         user.knowledge_base_text = updates.knowledge_base_text
-        
+
     if updates.delivery_location is not None:
         user.delivery_location = updates.delivery_location
 
@@ -93,7 +93,10 @@ def update_settings(
     if updates.handover_notifications is not None:
         # Merge — a partial update (e.g. only `whatsapp`) must never wipe out
         # the other channels' previously saved settings.
-        merged = {**DEFAULT_HANDOVER_NOTIFICATIONS, **(user.handover_notifications or {})}
+        merged = {
+            **DEFAULT_HANDOVER_NOTIFICATIONS,
+            **(user.handover_notifications or {}),
+        }
         incoming = updates.handover_notifications.model_dump(exclude_none=True)
         for channel, channel_settings in incoming.items():
             merged[channel] = channel_settings

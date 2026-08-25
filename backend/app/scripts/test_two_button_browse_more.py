@@ -62,7 +62,9 @@ test_sid = data.get("sid")
 print(json.dumps(data, indent=2))
 
 if not test_sid:
-    raise RuntimeError("Template creation failed — no SID returned. See response above.")
+    raise RuntimeError(
+        "Template creation failed — no SID returned. See response above."
+    )
 
 # ── Step 2: send it directly, same as the earlier diagnostic sends ────────
 print("\n" + "=" * 70)
@@ -79,5 +81,7 @@ message = client.messages.create(
 
 print(f"\nSent — SID: {message.sid}")
 print(f"Test template SID: {test_sid}")
-print("\nNow tap either button on WhatsApp and check Twilio Console → "
-      "Monitor → Logs → Messaging for a new Incoming row.")
+print(
+    "\nNow tap either button on WhatsApp and check Twilio Console → "
+    "Monitor → Logs → Messaging for a new Incoming row."
+)
