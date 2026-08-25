@@ -330,7 +330,9 @@ def sanitize_incoming_text(raw: str | None) -> str:
 
     # Keep \n and \t; drop every other control char including the C1 range.
     cleaned = "".join(
-        ch for ch in raw if ch in ("\n", "\t") or (ord(ch) >= 32 and ord(ch) != 127)
+        ch
+        for ch in raw
+        if ch in ("\n", "\t") or (ord(ch) >= 32 and not (127 <= ord(ch) <= 159))
     )
     # Collapse runs of 3+ blank lines and any run of spaces/tabs.
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)

@@ -472,7 +472,7 @@ def process_customer_message_job(data: dict) -> None:
     # in save_message) sees the same normalised text. Doing it per-branch is how
     # one path ends up validating and another doesn't.
     message_text = sanitize_incoming_text(data.get("message_text"))
-    profile_name = sanitize_incoming_text(data.get("customer_name")) or None
+    profile_name = sanitize_incoming_text(data.get("customer_name"))[:100] or None
     button_payload = sanitize_incoming_text(data.get("button_payload")) or None
 
     t_lock_start = time.time()
