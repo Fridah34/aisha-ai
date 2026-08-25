@@ -65,7 +65,9 @@ class HandoverService:
     ) -> HandoverEvent | None:
         """Called when the owner takes over a conversation
         (PATCH /conversations/{customer_id}/takeover)."""
-        event = crud.get_latest_open_event(db, customer_id=customer_id, business_id=business_id)
+        event = crud.get_latest_open_event(
+            db, customer_id=customer_id, business_id=business_id
+        )
         if event is None:
             return None
         return crud.set_status(db, event, HandoverEventStatus.ACCEPTED)

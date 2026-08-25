@@ -92,7 +92,17 @@ class PromptPayload(BaseModel):
     the final LLM prompt.
     """
 
-    system_block: str = Field(max_length=5000)
+    # Headroom for the real persona file. aisha_voice.txt has to carry the
+    # persona, the bilingual rules, the mandatory [LANG:xx] response format and
+    # the full do/don't contracts for [SHOW_CATEGORIES], [HANDOVER_REQUIRED]
+    # and [NOT_UNDERSTOOD]; that lands around 5.5KB and does not fit in 5000.
+    #
+    # The bound stays because an unbounded system_block would silently inflate
+    # every request, but it needs slack: exceeding it raises a ValidationError
+    # from build_prompt_payload, which fails EVERY customer message. That is a
+    # full outage triggered by editing a text file, so the ceiling is set well
+    # above the working size rather than just above it.
+    system_block: str = Field(max_length=12000)
     merchant_name: str = Field(max_length=200)
     retrieved_context: list[RetrievedChunk] = Field(default_factory=list)
     live_catalog: list[ProductContext] = Field(default_factory=list)

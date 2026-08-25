@@ -34,7 +34,9 @@ if config.config_file_name is not None:
 
 def get_url():
     # Get database URL from environment variable
-    return os.getenv("DIRECT_DATABASE_URL", "postgresql://EVE.0798080246@localhost/aisha_db")
+    return os.getenv(
+        "DIRECT_DATABASE_URL", "postgresql://EVE.0798080246@localhost/aisha_db"
+    )
 
 
 def run_migrations_offline() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import uuid
 from collections.abc import Sequence
 from functools import lru_cache
@@ -45,19 +46,41 @@ logger = logging.getLogger(__name__)
 # bare relative path silently breaks depending on how/where each process is
 # started. __file__ is stable regardless of launch context.
 #
-# NOTE: these two directories live at DIFFERENT levels of the tree (confirmed
-# via `find` on the deployed checkout) — they are not both under one shared
-# "knowledge_base root", so each gets its own anchor rather than a shared one:
-#   <repo_root>/knowledge_base/system_prompts/aisha_voice.txt   (repo root)
-#   <repo_root>/backend/knowledge_base/clean_wiki/              (inside backend/)
-# manager.py itself lives at <repo_root>/backend/app/knowledge_base/manager.py
+# BOTH directories are anchored to the BACKEND root so they resolve identically
+# on a host checkout and inside the container. They must be: the Dockerfile
+# builds with context ./backend into WORKDIR /app, which flattens backend/ to
+# /app and drops the repo-root level entirely. Anchoring the system prompt at
+# _REPO_ROOT therefore resolved to /knowledge_base/system_prompts/... in-container
+# — a path that does not exist and is not even in the build context — so every
+# customer message silently degraded to _FALLBACK_SYSTEM_PROMPT below.
+#   <backend_root>/knowledge_base/system_prompts/aisha_voice.txt
+#   <backend_root>/knowledge_base/clean_wiki/
+# manager.py itself lives at <backend_root>/app/knowledge_base/manager.py
 _MODULE_DIR = Path(__file__).resolve().parent
-_BACKEND_ROOT = _MODULE_DIR.parents[1]     # .../app/knowledge_base -> .../app -> .../backend
-_REPO_ROOT = _MODULE_DIR.parents[2]        # .../app/knowledge_base -> .../app -> .../backend -> repo root
+_BACKEND_ROOT = _MODULE_DIR.parents[
+    1
+]  # .../app/knowledge_base -> .../app -> .../backend
+_REPO_ROOT = _MODULE_DIR.parents[
+    2
+]  # .../app/knowledge_base -> .../app -> .../backend -> repo root
 
 # Establish default global system tracking constraints paths
-SYSTEM_PROMPT_PATH = _REPO_ROOT / "knowledge_base" / "system_prompts" / "aisha_voice.txt"
+SYSTEM_PROMPT_PATH = (
+    _BACKEND_ROOT / "knowledge_base" / "system_prompts" / "aisha_voice.txt"
+)
 DEFAULT_CLEAN_WIKI_DIR = _BACKEND_ROOT / "knowledge_base" / "clean_wiki"
+
+# Tried in order by _resolve_system_prompt_path(). The second entry is the
+# pre-move repo-root location, kept so an older checkout or a deploy that still
+# carries the file there is not silently downgraded to the fallback prompt.
+_SYSTEM_PROMPT_CANDIDATES: tuple[Path, ...] = (
+    SYSTEM_PROMPT_PATH,
+    _REPO_ROOT / "knowledge_base" / "system_prompts" / "aisha_voice.txt",
+)
+
+# Escape hatch for deploys that mount the prompt somewhere else entirely
+# (e.g. a Kubernetes ConfigMap or a secrets volume).
+SYSTEM_PROMPT_PATH_ENV_VAR = "AISHA_SYSTEM_PROMPT_PATH"
 DEFAULT_RETRIEVAL_LIMIT: int = 5
 DEFAULT_CONVERSATION_LIMIT: int = 10
 
@@ -75,13 +98,57 @@ class IngestionRejectedError(ValueError):
     """Triggered when an uploaded corporate asset fails raw regex safety checks."""
 
 
+def _holds_prompt(path: Path) -> bool:
+    """True only if `path` is a readable file with something actually in it."""
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
 
-@lru_cache(maxsize=1)
+
+def _resolve_system_prompt_path() -> Path:
+    """Returns the first candidate path that holds a non-empty prompt.
+
+    Resolved per call rather than once at import time so a prompt file that is
+    created or filled in after the process starts is picked up on the next
+    message instead of needing a restart. When nothing is readable this returns
+    SYSTEM_PROMPT_PATH so the resulting log line names the canonical location a
+    developer should populate, rather than the last candidate tried.
+    """
+    override = os.getenv(SYSTEM_PROMPT_PATH_ENV_VAR)
+    if override:
+        # Returned unconditionally: an explicitly configured path that is
+        # missing is a deploy error worth surfacing in the logs, not something
+        # to paper over by quietly falling through to a bundled default.
+        return Path(override).expanduser()
+
+    for candidate in _SYSTEM_PROMPT_CANDIDATES:
+        if _holds_prompt(candidate):
+            return candidate
+
+    return SYSTEM_PROMPT_PATH
+
+
+# maxsize is >1 because the resolved path can differ between candidates and the
+# env override. lru_cache does not cache exceptions, so the empty/missing case
+# re-checks the disk on every call — which is what lets a file populated at
+# runtime take effect without a restart.
+@lru_cache(maxsize=4)
 def _read_system_prompt(path: Path) -> str:
     """Reads the system prompt file from disk and caches the output in RAM."""
     if not path.is_file():
         raise FileNotFoundError(f"System prompt file missing at {path}")
-    return path.read_text(encoding="utf-8").strip()
+
+    contents = path.read_text(encoding="utf-8").strip()
+
+    # An empty file is a deploy mistake, not a valid "no persona" configuration,
+    # so it gets the same loud fallback as a missing one. Previously this
+    # returned "" and AISHA lost her entire persona and every response-tag
+    # contract with nothing at all in the logs to explain why.
+    if not contents:
+        raise FileNotFoundError(f"System prompt file is empty at {path}")
+
+    return contents
 
 
 class KnowledgeBaseManager:
@@ -267,16 +334,22 @@ class KnowledgeBaseManager:
     def _load_system_block(self) -> str:
         """Resolves system prompt blocks securely via our lru_cache file reader helper.
 
-        Falls back to a generic in-code prompt if the file is missing, so a
-        deploy/path misconfiguration degrades to a working-but-generic reply
-        instead of silently failing every customer message job.
+        Falls back to a generic in-code prompt if no candidate path holds a
+        usable prompt, so a deploy/path misconfiguration degrades to a
+        working-but-generic reply instead of silently failing every customer
+        message job.
         """
+        path = _resolve_system_prompt_path()
         try:
-            return _read_system_prompt(SYSTEM_PROMPT_PATH)
-        except FileNotFoundError:
+            return _read_system_prompt(path)
+        except OSError as exc:  # FileNotFoundError, PermissionError, IsADirectoryError…
             logger.error(
-                "System prompt file missing at %s — using fallback prompt",
+                "%s — using fallback prompt, so AISHA has no persona and will not "
+                "emit the [LANG:xx]/[HANDOVER_REQUIRED]/[SHOW_CATEGORIES] tags. "
+                "Populate %s or set %s.",
+                exc,
                 SYSTEM_PROMPT_PATH,
+                SYSTEM_PROMPT_PATH_ENV_VAR,
             )
             return _FALLBACK_SYSTEM_PROMPT
 
@@ -348,5 +421,3 @@ class KnowledgeBaseManager:
             )
             for row in reversed(rows)
         ]
-        
-        

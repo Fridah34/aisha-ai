@@ -282,11 +282,8 @@ async def get_document_file(
     content = raw_path.read_bytes()
 
     safe_header_name = (
-    document.file_name
-    .replace("\n", "")
-    .replace("\r", "")
-    .replace('"', "")
-)
+        document.file_name.replace("\n", "").replace("\r", "").replace('"', "")
+    )
 
     if extension in _INLINE_MEDIA_TYPES:
         media_type = _INLINE_MEDIA_TYPES[extension]

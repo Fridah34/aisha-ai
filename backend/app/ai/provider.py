@@ -190,8 +190,14 @@ def _call_groq(prompt: str, conversation_history: list) -> str:
     # Build messages with system prompt
     messages = [{"role": "system", "content": prompt}] + conversation_history
 
+    # llama-3.3-70b-versatile was decommissioned by Groq and now 404s with
+    # model_not_found, which surfaced to customers as the bilingual "brief
+    # issue" fallback below in get_ai_response(). Override with GROQ_MODEL if
+    # this one is retired too — `client.models.list()` shows what the key can
+    # actually reach. Verified: gpt-oss-120b honours the mandatory [LANG:xx]
+    # tag contract; qwen3.6-27b does not (it emits <think> blocks).
     response = client.chat.completions.create(
-        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
         messages=messages,
         max_tokens=1024,
         temperature=0.7,

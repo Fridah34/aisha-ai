@@ -17,8 +17,8 @@ from app.webhook.router import router as webhook_router
 from app.websocket.router import router as websocket_router
 
 # --- APPLICATION SETUP ---
-#Base.metadata.drop_all(bind=engine)
-#Base.metadata.create_all(bind=engine)
+# Base.metadata.drop_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 print("Database configuration loaded.")
 

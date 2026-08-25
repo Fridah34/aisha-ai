@@ -26,7 +26,7 @@ pwd_context = CryptContext(
 
 SECRET_KEY = os.getenv("SECRET_KEY") or "change-me-in-production-super-secret-key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 3 # 3 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 3  # 3 hours
 
 # =========PASSWORD HASHING FUNCTIONS=======
 

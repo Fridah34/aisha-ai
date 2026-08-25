@@ -43,9 +43,7 @@ down_revision: str | Sequence[str] | None = "f7a3c9d21b48"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-document_status_enum = sa.Enum(
-    "learning", "ready", "failed", name="document_status"
-)
+document_status_enum = sa.Enum("learning", "ready", "failed", name="document_status")
 
 
 def upgrade() -> None:
@@ -59,7 +57,10 @@ def upgrade() -> None:
     op.create_table(
         "knowledge_documents",
         sa.Column(
-            "id", sa.UUID(), primary_key=True, server_default=sa.text("gen_random_uuid()")
+            "id",
+            sa.UUID(),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
         ),
         sa.Column(
             "business_id",
@@ -145,7 +146,10 @@ def upgrade() -> None:
     op.create_table(
         "wiki_chunks",
         sa.Column(
-            "id", sa.UUID(), primary_key=True, server_default=sa.text("gen_random_uuid()")
+            "id",
+            sa.UUID(),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
         ),
         sa.Column(
             "business_id",
@@ -178,15 +182,11 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.UniqueConstraint(
-            "business_id", "content_hash", name="uq_wiki_chunk_hash"
-        ),
+        sa.UniqueConstraint("business_id", "content_hash", name="uq_wiki_chunk_hash"),
         sa.CheckConstraint(
             "char_length(chunk_text) > 0", name="chk_wiki_chunks_text_not_empty"
         ),
-        sa.CheckConstraint(
-            "content_hash <> ''", name="chk_wiki_chunks_hash_not_empty"
-        ),
+        sa.CheckConstraint("content_hash <> ''", name="chk_wiki_chunks_hash_not_empty"),
     )
 
     op.create_index("ix_wiki_chunks_business_id", "wiki_chunks", ["business_id"])
@@ -226,6 +226,8 @@ def downgrade() -> None:
         "DROP TRIGGER IF EXISTS update_knowledge_documents_updated_at ON knowledge_documents;"
     )
     op.drop_index("ix_knowledge_documents_created_at", table_name="knowledge_documents")
-    op.drop_index("ix_knowledge_documents_business_id", table_name="knowledge_documents")
+    op.drop_index(
+        "ix_knowledge_documents_business_id", table_name="knowledge_documents"
+    )
     op.drop_table("knowledge_documents")
     document_status_enum.drop(op.get_bind(), checkfirst=True)

@@ -151,9 +151,9 @@ class User(Base):
         nullable=False,
         default=lambda: DEFAULT_HANDOVER_NOTIFICATIONS,
         server_default=text(
-            "'{\"dashboard\": {\"enabled\": true, \"delay_minutes\": 0}, "
-            "\"whatsapp\": {\"enabled\": true, \"delay_minutes\": 0}, "
-            "\"email\": {\"enabled\": true, \"delay_minutes\": 5}}'::json"
+            '\'{"dashboard": {"enabled": true, "delay_minutes": 0}, '
+            '"whatsapp": {"enabled": true, "delay_minutes": 0}, '
+            '"email": {"enabled": true, "delay_minutes": 5}}\'::json'
         ),
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -233,9 +233,7 @@ class Category(Base):
     )
 
     business: Mapped[User] = relationship("User", back_populates="categories")
-    products: Mapped[list[Product]] = relationship(
-        "Product", back_populates="category"
-    )
+    products: Mapped[list[Product]] = relationship("Product", back_populates="category")
 
     # Reverse tracking for marketplace navigation metrics
     conversation_states: Mapped[list[ConversationState]] = relationship(
@@ -468,28 +466,61 @@ class MarketplaceSession(Base):
         String(20), unique=True, index=True, nullable=False
     )
     pending_action: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # The top-level business classification the customer picked (BusinessType
+    # value: 'retail', 'food', 'services'...). This column is ONLY ever a
+    # business type.
+    #
+    # It used to double as the category slot: handle_marketplace_step assigned
+    # the chosen Category *name* here (e.g. 'Handbag'), and ~14 downstream call
+    # sites read it back as `category_name=`. That worked by accident but made
+    # the field unreadable, and it meant the real business type had nowhere to
+    # live. Category selection now has its own column below.
     selected_business_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )
+
+    # The Category NAME the customer is currently browsing, scoped to
+    # selected_business_id. Names (not ids) because every consumer —
+    # get_category_id_for_business, get_products_for_business_category,
+    # resolve_product_choice, format_product_list_for_business — resolves by
+    # (business_id, category_name), and Category enforces a
+    # UniqueConstraint('name', 'business_id') so the pair is unambiguous.
+    # Sized to match Category.name (String(100)).
+    selected_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     selected_business_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    
+
     last_product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    
-    last_product: Mapped[Product | None] = relationship(
-        "Product", foreign_keys= [last_product_id]
+
+    # When last_product_id was set. _resolve_photo_target only trusts the
+    # "last viewed product" fallback inside STALE_PHOTO_WINDOW of this
+    # timestamp.
+    #
+    # Needs its own column: that freshness check used to read updated_at, which
+    # refreshes on every session mutation and (since
+    # get_or_create_marketplace_session now touches it per message, to make the
+    # session TTL measure real inactivity) is effectively always "now". Reusing
+    # updated_at would leave the guard permanently satisfied and silently
+    # inert.
+    last_product_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
-    
-    
+
+    last_product: Mapped[Product | None] = relationship(
+        "Product", foreign_keys=[last_product_id]
+    )
+
     selected_product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),
@@ -633,6 +664,7 @@ class ChatMessage(Base):
 
     business: Mapped[User] = relationship("User", back_populates="chat_messages")
 
+
 # ==============================================================================
 # HANDOVER EVENT
 # ==============================================================================
@@ -713,5 +745,3 @@ class HandoverEvent(Base):
         waiting time is intentionally never stored."""
         now = datetime.now(self.waiting_start_time.tzinfo)
         return max(0.0, (now - self.waiting_start_time).total_seconds())
-    
-    

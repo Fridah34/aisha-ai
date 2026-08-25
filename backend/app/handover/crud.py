@@ -69,7 +69,9 @@ def get_latest_open_event(
     )
 
 
-def set_status(db: Session, event: HandoverEvent, status: HandoverEventStatus) -> HandoverEvent:
+def set_status(
+    db: Session, event: HandoverEvent, status: HandoverEventStatus
+) -> HandoverEvent:
     event.status = status
     db.commit()
     db.refresh(event)

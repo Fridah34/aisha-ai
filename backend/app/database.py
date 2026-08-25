@@ -26,9 +26,17 @@ logging.basicConfig(
 # these dump full HTTP request/response bodies (Groq + Twilio API payloads,
 # connection-pool internals) on every call, burying the app's own
 # [Webhook]/[Twilio]/[Redis] prints that actually matter for debugging.
-for noisy_logger in ("httpx", "httpcore", "urllib3", "twilio.http_client", "groq", "hpack", "redis"):
+for noisy_logger in (
+    "httpx",
+    "httpcore",
+    "urllib3",
+    "twilio.http_client",
+    "groq",
+    "hpack",
+    "redis",
+):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
-    
+
 # ==============================================================================
 # CONNECTION PATH CONFIGURATION
 # ==============================================================================
@@ -37,7 +45,9 @@ raw_url = settings.RAW_DATABASE_URL
 # 1. Standardize protocol for asyncpg
 if raw_url.startswith("postgres://"):
     raw_url = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
-elif raw_url.startswith("postgresql://") and not raw_url.startswith("postgresql+asyncpg://"):
+elif raw_url.startswith("postgresql://") and not raw_url.startswith(
+    "postgresql+asyncpg://"
+):
     raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # 2. Strip libpq-specific query parameters that cause asyncpg TypeErrors
@@ -56,14 +66,16 @@ for param in FORBIDDEN_PARAMS:
     query_params.pop(param, None)
 
 cleaned_query = urlencode(query_params, doseq=True)
-ASYNC_DATABASE_URL = urlunparse((
-    parsed.scheme,
-    parsed.netloc,
-    parsed.path,
-    parsed.params,
-    cleaned_query,
-    parsed.fragment,
-))
+ASYNC_DATABASE_URL = urlunparse(
+    (
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        cleaned_query,
+        parsed.fragment,
+    )
+)
 
 # Clean URL for synchronous SQLAlchemy engine
 SYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
@@ -74,10 +86,7 @@ SYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("postgresql+asyncpg://", "postgre
 parsed_db = urlparse(SYNC_DATABASE_URL)
 
 # Detect if running in local development, CI runner, or docker network vs production Neon DB
-is_local_db = (
-    parsed_db.hostname in {"localhost", "127.0.0.1", "postgres", "db", None}
-    
-)
+is_local_db = parsed_db.hostname in {"localhost", "127.0.0.1", "postgres", "db", None}
 
 sync_connect_args = {}
 async_connect_args = {"prepared_statement_cache_size": 0}
@@ -89,7 +98,6 @@ if not is_local_db:
 else:
     # Allow non-SSL / fallback for local dev & GitHub Actions CI runners
     sync_connect_args["sslmode"] = "disable"
-
 
 
 # ==============================================================================
@@ -194,7 +202,6 @@ def get_db() -> Generator[Session, None, None]:
     try:
         yield db
     finally:
-       
         try:
             db.close()
         except Exception:

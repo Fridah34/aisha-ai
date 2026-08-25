@@ -189,7 +189,9 @@ async def build_prompt_from_context(
         print(f"[Cache HIT] Business {business_id} prompt from redis")
         return cached
 
-    print(f"[Cache MISS] Building prompt for business {business_id} from knowledge base")
+    print(
+        f"[Cache MISS] Building prompt for business {business_id} from knowledge base"
+    )
 
     manager = KnowledgeBaseManager(session=async_session)
 
@@ -299,7 +301,10 @@ def normalize_phone(phone_number: str) -> str:
 
 
 def get_or_create_customer(
-    phone_number: str, business_id: uuid.UUID, db: Session, profile_name: str | None = None
+    phone_number: str,
+    business_id: uuid.UUID,
+    db: Session,
+    profile_name: str | None = None,
 ) -> Customer:
     """Find a customer by phone number or create them if first message."""
     # Phone number is the customer's only identity — no accounts needed.
@@ -314,7 +319,9 @@ def get_or_create_customer(
     )
 
     if not customer:
-        customer = Customer(phone_number=phone, business_id=business_id, name=profile_name)
+        customer = Customer(
+            phone_number=phone, business_id=business_id, name=profile_name
+        )
         db.add(customer)
         db.commit()
         db.refresh(customer)
@@ -464,7 +471,7 @@ async def process_customer_message(
 ) -> dict:
     """Main orchestrator — called by the WhatsApp webhook on every incoming customer message."""
     # 1. Find or create customer
-    customer = get_or_create_customer(phone_number,business_id, db, profile_name)
+    customer = get_or_create_customer(phone_number, business_id, db, profile_name)
 
     # 2. Detect language for logging
     language = detect_language(message_text)
@@ -634,8 +641,13 @@ async def process_customer_message(
         state.status = HandoverStatus.NEEDS_HUMAN
         db.commit()
         notify_handover(
-            customer.id, business_id, message_text, urgency, db,
-            conversation_id=state.id, ai_summary=clean,
+            customer.id,
+            business_id,
+            message_text,
+            urgency,
+            db,
+            conversation_id=state.id,
+            ai_summary=clean,
         )
 
     return {
@@ -678,7 +690,9 @@ def notify_handover(
         customer_phone=phone,
         customer_last_message=customer_message,
         ai_summary=ai_summary,
-        reason=f"[{urgency.upper()}] {customer_message[:200]}" if urgency else customer_message,
+        reason=f"[{urgency.upper()}] {customer_message[:200]}"
+        if urgency
+        else customer_message,
     )
 
 
@@ -728,4 +742,3 @@ def parse_ai_response(raw_response: str) -> tuple:
     print("[AISHA WARNING] AI response missing language tag — using word fallback")
     language = detect_language(raw_response)
     return language, raw_response.strip()
-

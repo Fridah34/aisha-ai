@@ -75,6 +75,7 @@ class NotificationPayload(BaseModel):
     business_notification_email: list[str] | None = None
     business_notification_phone: str | None = None
 
+
 class HandoverEventResponse(BaseModel):
     """Read-model for a `HandoverEvent` row, including the dynamically
     computed waiting duration (never stored) and the human-readable reason
