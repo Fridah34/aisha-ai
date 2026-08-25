@@ -30,16 +30,64 @@ LOCK_TTL_SECONDS = 30
 
 
 # ─── PROMPT VERSIONING ─────────────────────────────────────────────────────
-# Hashes the actual bytecode of build_system_prompt so any edit to that
-# function automatically produces a new cache key. Old keys for the previous
-# version simply become orphaned and are never read again — no manual
-# `DEL business_prompt:<id>` needed after every prompt change, and no risk
-# of silently serving a stale prompt for up to an hour after a code edit.
+# Fingerprints everything that shapes a business prompt, so any change to the
+# persona file or the renderer automatically produces a new cache key. Old
+# keys for the previous version are orphaned and never read again — they age
+# out on their own TTL, so no manual `DEL business_prompt:*` is needed after a
+# prompt edit and there's no risk of serving a stale prompt for up to an hour.
+#
+# This used to hash `build_system_prompt.__code__.co_code`, which was wrong in
+# a way that made the whole mechanism inert: build_system_prompt() is not on
+# the runtime prompt path at all (KnowledgeBaseManager.render_and_verify is),
+# so editing the real prompt source never moved the version. Worse, the
+# version was never actually mixed into the Redis key, so a 0-byte
+# aisha_voice.txt stayed cached as a generic fallback prompt for a full hour.
+#
+# What we hash instead:
+#   1. The bytes of the resolved persona file (aisha_voice.txt). This is the
+#      big one — it's the file humans actually edit.
+#   2. The renderer's bytecode, so changing the prompt layout also busts.
+# SYSTEM_PROMPT_SUFFIX is deliberately NOT included: service.py appends it
+# *after* the cache lookup, so it can never be stale in a cached value.
 def get_prompt_version() -> str:
-    """Returns an 8-char MD5 hash of the prompt builder function bytecode."""
-    from app.ai.prompt_builder import build_system_prompt
+    """Returns an 8-char fingerprint of the current prompt definition.
 
-    return hashlib.md5(build_system_prompt.__code__.co_code).hexdigest()[:8]
+    Never raises. A prompt whose version can't be computed still gets a
+    stable-per-process key, so a transient read error degrades to "cache is
+    a bit stickier than usual" rather than taking the message path down.
+    """
+    digest = hashlib.md5()  # noqa: S324 — cache-busting fingerprint, not a security hash
+
+    try:
+        from app.knowledge_base.manager import _resolve_system_prompt_path
+
+        path = _resolve_system_prompt_path()
+        # Read fresh rather than through manager's lru_cache: the point of
+        # this function is to notice content changes, and a memoized read
+        # would keep returning the bytes from process start.
+        digest.update(path.read_bytes() if path.is_file() else b"<missing-persona>")
+    except Exception as e:  # noqa: BLE001 — versioning must never break a message
+        print(f"[Prompt version] persona file unreadable: {e}")
+        digest.update(b"<unreadable-persona>")
+
+    try:
+        from app.knowledge_base.manager import KnowledgeBaseManager
+
+        digest.update(KnowledgeBaseManager.render_and_verify.__code__.co_code)
+    except Exception as e:  # noqa: BLE001
+        print(f"[Prompt version] renderer bytecode unavailable: {e}")
+
+    return digest.hexdigest()[:8]
+
+
+def _business_prompt_key(business_id: uuid.UUID) -> str:
+    """Single source of truth for the prompt cache key.
+
+    Every reader and writer goes through this, so the version segment can
+    never end up on one side of the cache but not the other — which would
+    silently turn the cache into a permanent miss (or a permanent stale hit).
+    """
+    return f"business_prompt:{get_prompt_version()}:{business_id}"
 
 
 def acquire_customer_lock(
@@ -131,8 +179,7 @@ def get_cached_business_prompt(business_id: uuid.UUID):
     if not REDIS_AVAILABLE:
         return None
     try:
-        key = f"business_prompt:{business_id}"
-        return redis_client.get(key)
+        return redis_client.get(_business_prompt_key(business_id))
     except Exception as e: # noqa: BLE001
         print(f"Redis read error: {e}")
         return None
@@ -147,8 +194,7 @@ def cache_business_prompt(business_id: uuid.UUID, prompt: str, ttl_seconds: int 
     if not REDIS_AVAILABLE:
         return
     try:
-        key = f"business_prompt:{business_id}"
-        redis_client.setex(key, ttl_seconds, prompt)
+        redis_client.setex(_business_prompt_key(business_id), ttl_seconds, prompt)
     except Exception as e:  # noqa: BLE001
         print(f"Redis write error: {e}")
 
@@ -165,9 +211,21 @@ def invalidate_business_cache(business_id: uuid.UUID):
     if not REDIS_AVAILABLE:
         return
     try:
-        key = f"business_prompt:{business_id}"
-        redis_client.delete(key)
-        print(f"✓ Cache invalidated for business {business_id}")
+        # Delete every prompt-version variant for this business, not just the
+        # one the current code would write. An owner editing their products
+        # must not be able to leave an older-version entry behind that a
+        # rolled-back deploy would then start reading again. scan_iter is used
+        # instead of KEYS because Upstash/Redis KEYS blocks the whole server.
+        deleted = 0
+        for key in redis_client.scan_iter(match=f"business_prompt:*:{business_id}", count=100):
+            redis_client.delete(key)
+            deleted += 1
+
+        # Pre-versioning keys had no version segment. Kept so an in-place
+        # deploy doesn't strand the old-format entry for a full hour.
+        redis_client.delete(f"business_prompt:{business_id}")
+
+        print(f"✓ Cache invalidated for business {business_id} ({deleted} versioned entries)")
     except Exception as e: # noqa: BLE001
         print(f"Redis delete error: {e}")
 

@@ -2,8 +2,10 @@ import asyncio
 import os
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
+
+from rq import get_current_job
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -18,8 +20,11 @@ from app.ai.cache import (
     set_active_business,
 )
 from app.ai.service import (
+    classify_handover_urgency,
     detect_language,
+    get_or_create_conversation_state,
     normalize_phone,
+    notify_handover,
     process_customer_message,
     save_message,
 )
@@ -44,10 +49,13 @@ from app.flows.marketplace_flow import (
     get_products_for_business_category,
     handle_marketplace_step,
     is_checkout_command,
+    is_human_handover_request,
     is_photo_request,
     is_status_command,
     is_switch_command,
+    load_session_product,
     looks_like_question,
+    sanitize_incoming_text,
     parse_name_and_contact,
     parse_quantity,
     reset_after_checkout,
@@ -56,6 +64,7 @@ from app.flows.marketplace_flow import (
     resolve_size_choice,
 )
 from app.flows.reply_composer import compose
+from app.timing import Stopwatch, log_stage
 from app.models import ConversationState, Customer, HandoverStatus, Product, User
 from app.webhook.client import (
     send_browse_more_prompt,
@@ -190,6 +199,70 @@ def _send_product_photo(
                  content=caption, language=language, db=db)
 
 
+def _handle_explicit_handover_request(
+    customer_phone: str,
+    business: User,
+    customer: Customer,
+    message_text: str,
+    language: str,
+    marketplace_session,
+    db: Session,
+) -> None:
+    """Escalates an explicit "let me talk to a human" request.
+
+    Why this exists as a deterministic path at all: the only other route to a
+    handover is the LLM emitting [HANDOVER_REQUIRED] from inside the AI Q&A
+    branch — and most awaiting_* states never reach that branch. A customer
+    stuck at 'awaiting_size' asking for a manager had their message parsed as a
+    size, failed to match, and got "please choose a valid option" back.
+
+    is_human_handover_request() was written for this and has been dead code
+    since the RQ migration: its docstring still points at webhook/router.py
+    call sites, but router.py became a thin producer and the check was never
+    carried into this module.
+
+    Clears the marketplace pending_action so that once a human is involved the
+    deterministic state machine stops trying to parse the conversation as menu
+    selections. Deliberately does NOT set HUMAN_ACTIVE — that flag means "the
+    owner has actually taken over" and is what silences AISHA entirely. This
+    sets NEEDS_HUMAN and notifies, matching what the LLM tag path does.
+    """
+    state = get_or_create_conversation_state(customer.id, business.id, db)
+    state.status = HandoverStatus.NEEDS_HUMAN
+    state.pending_action = None
+    db.commit()
+
+    marketplace_session.pending_action = None
+    marketplace_session.selected_product_id = None
+    marketplace_session.selected_size = None
+    db.commit()
+
+    reply_text = (
+        "Ngoja nikuunganishe na timu yetu — mtu atakujibu hivi punde."
+        if language == "SW"
+        else "Let me connect you with our team — someone will get back to you shortly."
+    )
+
+    save_message(customer_id=customer.id, business_id=business.id, role="assistant",
+                 content=reply_text, language=language, db=db)
+    send_text_message(to_phone=customer_phone, message=reply_text)
+
+    # Notify last: the customer's acknowledgement must not depend on the
+    # business's notification channels (email/WhatsApp/dashboard) succeeding.
+    try:
+        notify_handover(
+            customer.id,
+            business.id,
+            message_text,
+            classify_handover_urgency(message_text),
+            db,
+            conversation_id=state.id,
+            ai_summary="Customer explicitly asked to speak with a human.",
+        )
+    except Exception as notify_error:  # noqa: BLE001 — customer is already answered
+        print(f"[Worker] Handover notification failed for {customer_phone}: {notify_error}")
+
+
 def _send_fallback_reply(
     customer_phone: str, business_id: uuid.UUID, customer: Customer, language: str, reply_text: str, db: Session
 ) -> None:
@@ -279,14 +352,34 @@ def process_customer_message_job(data: dict) -> None:
     ConversationState to decide whether to stay silent.
     """
     t_job_start = time.time()
+
+    # Queue wait: enqueued_at (stamped by the webhook process) -> now (dequeue).
+    # This is the one number a single-process trace can't see, and it's what
+    # separates "slow processing" from "waiting behind other jobs".
+    trace_id = data.get("trace_id")
+    sw = Stopwatch(trace_id)
+    try:
+        _job = get_current_job()
+        if _job is not None and _job.enqueued_at is not None:
+            wait_ms = (
+                datetime.now(timezone.utc) - _job.enqueued_at.replace(tzinfo=timezone.utc)
+            ).total_seconds() * 1000
+            log_stage("worker_pickup (QUEUE WAIT)", wait_ms, trace_id)
+    except Exception as e:  # noqa: BLE001 — instrumentation must never break the job
+        print(f"[TIMING] queue wait unavailable: {e}")
+
     db = SessionLocal()
     t_db_opened = time.time()
     print(f"[TIMING] DB session open: {t_db_opened - t_job_start:.2f}s")
 
     customer_phone = data["phone_number"]
-    message_text = data["message_text"]
-    profile_name = data.get("customer_name")
-    button_payload = data.get("button_payload")
+    # Sanitised once, here, so every branch below (keyword matchers, numeric
+    # selection parsers, product-name matching, the AI call, and the DB writes
+    # in save_message) sees the same normalised text. Doing it per-branch is how
+    # one path ends up validating and another doesn't.
+    message_text = sanitize_incoming_text(data.get("message_text"))
+    profile_name = sanitize_incoming_text(data.get("customer_name")) or None
+    button_payload = sanitize_incoming_text(data.get("button_payload")) or None
 
     t_lock_start = time.time()
     lock_token = acquire_customer_lock(customer_phone, timeout_seconds=60)
@@ -338,12 +431,18 @@ def process_customer_message_job(data: dict) -> None:
             return
 
         if button_payload == "browse_more":
-            if marketplace_session.selected_business_id and marketplace_session.selected_business_type:
+            # Only the business is required now. This used to also demand a
+            # selected_category, so a customer whose session had a store but no
+            # category (the active_biz cache reopen path below clears the
+            # category) got bounced out to the whole-marketplace menu instead of
+            # that store's catalog. format_product_list_for_business falls back
+            # to the full catalog when the category is None.
+            if marketplace_session.selected_business_id:
                 marketplace_session.pending_action = "awaiting_product_choice"
                 marketplace_session.list_offset = 0
                 db.commit()
                 product_text = format_product_list_for_business(
-                    db, marketplace_session.selected_business_id, marketplace_session.selected_business_type
+                    db, marketplace_session.selected_business_id, marketplace_session.selected_category
                 )
                 send_text_message(to_phone=customer_phone, message=product_text)
             else:
@@ -364,7 +463,7 @@ def process_customer_message_job(data: dict) -> None:
                     still_active = db.query(User).filter(User.id == reopened_business_id, User.is_active).first()
                     if still_active:
                         marketplace_session.selected_business_id = reopened_business_id
-                        marketplace_session.selected_business_type = None
+                        marketplace_session.selected_category = None
                         marketplace_session.pending_action = None
                         db.commit()
                     else:
@@ -391,7 +490,7 @@ def process_customer_message_job(data: dict) -> None:
                     _send_product_photos(
                         customer_phone=customer_phone,
                         business_id=marketplace_session.selected_business_id,
-                        category_name=marketplace_session.selected_business_type,
+                        category_name=marketplace_session.selected_category,
                         db=db,
                     )
                     print(f"[TIMING] _send_product_photos: {time.time() - t0:.2f}s")
@@ -444,6 +543,21 @@ def process_customer_message_job(data: dict) -> None:
             print(f"[TIMING] TOTAL job time: {time.time() - t_job_start:.2f}s")
             return
 
+        # ── Explicit human-handover request ──
+        # Checked BEFORE is_photo_request and before `action =
+        # marketplace_session.pending_action` below, so no deterministic
+        # awaiting_* branch can swallow the message with its own
+        # state-specific "that wasn't a valid option" reply. A customer who
+        # asks for a person must never have to guess the right menu word first.
+        if is_human_handover_request(message_text):
+            print(f"[Worker] Explicit handover request from {customer_phone}")
+            _handle_explicit_handover_request(
+                customer_phone, business, customer, message_text,
+                language, marketplace_session, db,
+            )
+            print(f"[TIMING] TOTAL job time: {time.time() - t_job_start:.2f}s")
+            return
+
         if is_photo_request(message_text):
             matched_product = _resolve_photo_target(marketplace_session, business.id, message_text, db)
             if matched_product and matched_product.image_url:
@@ -453,7 +567,7 @@ def process_customer_message_job(data: dict) -> None:
                 return
             marketplace_session.pending_action = "awaiting_photo_choice"
             db.commit()
-            reply_text = format_product_list_for_business(db, business.id, marketplace_session.selected_business_type)
+            reply_text = format_product_list_for_business(db, business.id, marketplace_session.selected_category)
             save_message(customer_id=customer.id, business_id=business.id, role="assistant",
                          content=reply_text, language=language, db=db)
             t0 = time.time()
@@ -466,7 +580,7 @@ def process_customer_message_job(data: dict) -> None:
 
         if action == "awaiting_product_choice":
             matched_product = resolve_product_choice(
-                business_id=business.id, category_name=marketplace_session.selected_business_type,
+                business_id=business.id, category_name=marketplace_session.selected_category,
                 message=message_text, db=db,
             )
             if matched_product:
@@ -484,7 +598,7 @@ def process_customer_message_job(data: dict) -> None:
 
         elif action == "awaiting_photo_choice":
             matched_product = resolve_product_choice(
-                business_id=business.id, category_name=marketplace_session.selected_business_type,
+                business_id=business.id, category_name=marketplace_session.selected_category,
                 message=message_text, db=db,
             )
             if matched_product and matched_product.image_url:
@@ -509,7 +623,7 @@ def process_customer_message_job(data: dict) -> None:
             if ai_answer:
                 reply_text = ai_answer
             else:
-                product_list = format_product_list_for_business(db, business.id, marketplace_session.selected_business_type)
+                product_list = format_product_list_for_business(db, business.id, marketplace_session.selected_category)
                 facts = f"please reply with a product name from the list above:\n\n{product_list}"
                 reply_text = compose(opener_key=None, closer_key=None, facts=facts)
             save_message(customer_id=customer.id, business_id=business.id, role="assistant",
@@ -519,7 +633,10 @@ def process_customer_message_job(data: dict) -> None:
             return
 
         elif action == "awaiting_size":
-            product = db.query(Product).filter(Product.id == marketplace_session.selected_product_id).first()
+            # load_session_product scopes by selected_business_id + is_available;
+            # filtering on the bare PK here let a selected_product_id left over
+            # from a previous store resolve to that store's product.
+            product = load_session_product(marketplace_session, db)
             if not product:
                 marketplace_session.pending_action = None
                 marketplace_session.selected_product_id = None
@@ -543,7 +660,7 @@ def process_customer_message_job(data: dict) -> None:
 
             sizes = _parse_sizes(product.variant_options)
             unavailable_term = find_mentioned_alternate_variant(
-                message_text, business.id, marketplace_session.selected_business_type,
+                message_text, business.id, marketplace_session.selected_category,
                 product.variant_options, db,
             )
             if unavailable_term:
@@ -564,7 +681,10 @@ def process_customer_message_job(data: dict) -> None:
             return
 
         elif action == "awaiting_quantity":
-            product = db.query(Product).filter(Product.id == marketplace_session.selected_product_id).first()
+            # load_session_product scopes by selected_business_id + is_available;
+            # filtering on the bare PK here let a selected_product_id left over
+            # from a previous store resolve to that store's product.
+            product = load_session_product(marketplace_session, db)
             qty = parse_quantity(message_text)
             if not product:
                 marketplace_session.pending_action = None
@@ -578,7 +698,7 @@ def process_customer_message_job(data: dict) -> None:
 
             elif qty is None:
                 unavailable_term = find_mentioned_alternate_variant(
-                    message_text, business.id, marketplace_session.selected_business_type,
+                    message_text, business.id, marketplace_session.selected_category,
                     product.variant_options or "", db,
                 )
                 if unavailable_term:
@@ -601,6 +721,7 @@ def process_customer_message_job(data: dict) -> None:
                 cart = get_or_create_cart(customer_phone, business.id, db)
                 add_item_to_cart(cart, product, marketplace_session.selected_size, qty, db)
                 marketplace_session.last_product_id = product.id
+                marketplace_session.last_product_at = datetime.now(timezone.utc)
                 marketplace_session.selected_product_id = None
                 marketplace_session.selected_size = None
                 marketplace_session.pending_action = "awaiting_cart_action"
@@ -626,7 +747,7 @@ def process_customer_message_job(data: dict) -> None:
                 return
 
             matched_product = resolve_product_choice(
-                business_id=business.id, category_name=marketplace_session.selected_business_type,
+                business_id=business.id, category_name=marketplace_session.selected_category,
                 message=message_text, db=db,
             )
             if matched_product:
@@ -724,6 +845,7 @@ def process_customer_message_job(data: dict) -> None:
         matched_image_url, product_id = find_product_image(result["response"], business.id, db)
         if matched_image_url and product_id:
             marketplace_session.last_product_id = product_id
+            marketplace_session.last_product_at = datetime.now(timezone.utc)
             db.commit()
             customer_id = result["customer_id"]
             if not already_sent_image(customer_id=customer_id, business_id=business.id, product_id=product_id):
@@ -747,5 +869,8 @@ def process_customer_message_job(data: dict) -> None:
     finally:
         release_customer_lock(customer_phone, lock_token)
         db.close()
+        # In the finally block so it fires on every one of the ~40 early
+        # returns as well as the error path — a per-return print would miss some.
+        sw.total("worker_processing_TOTAL")
         
         

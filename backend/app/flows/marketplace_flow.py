@@ -19,7 +19,43 @@ from app.webhook.client import send_text_message
 
 # How long a customer's mid-flow state (e.g. "awaiting_size") stays valid
 # before we treat it as abandoned and reset them to the top-level menu.
+#
+# Only ever consulted by handle_marketplace_step's pre-store branch. It is NOT
+# the general session TTL — see MARKETPLACE_SESSION_TTL below, which is the one
+# that actually protects customers already inside a store.
 SESSION_TIMEOUT_HOURS = 24
+
+# Inactivity window after which get_or_create_marketplace_session resets a
+# customer to the top-level menu.
+#
+# Why this exists: handle_marketplace_step's own staleness check (above) is
+# gated on `selected_business_id is None`, so it can only ever fire for a
+# customer who has NOT entered a store. Once selected_business_id is set,
+# nothing expired the session, and message_processor short-circuits
+# handle_marketplace_step entirely for those customers. The observed effect was
+# sessions pinned at pending_action='awaiting_product_choice' with
+# selected_product_id=NULL for days: every incoming message got interpreted as
+# a product choice first, and the customer's only escape was typing one of
+# SWITCH_KEYWORDS exactly.
+#
+# Measured against MarketplaceSession.updated_at, which
+# get_or_create_marketplace_session touches on every inbound message. That
+# makes this a true "15 minutes since the customer last said anything" window
+# rather than "15 minutes since the state last changed" — without the touch, a
+# customer chatting to the LLM (a path that mutates no session columns) would
+# get yanked back to the menu mid-conversation.
+MARKETPLACE_SESSION_TTL = timedelta(minutes=15)
+
+# Hard ceiling on any free-text field we accept off a WhatsApp payload before it
+# reaches a query, a regex or a DB column. WhatsApp itself caps bodies around
+# 4096 chars; anything longer is malformed or hostile. Applied by
+# sanitize_incoming_text() below.
+MAX_INBOUND_TEXT_CHARS = 1000
+
+# Longest numeric run we'll even try to read as a menu selection. A list never
+# has more than a few dozen entries, so a 6-digit cap is generous — it exists
+# so a pathological "9" * 100000 payload can't reach int().
+MAX_MENU_SELECTION_DIGITS = 6
 
 # How long a "last viewed product" guess (see _resolve_photo_target below)
 # stays trustworthy before we treat it as stale and ignore it. Defined here
@@ -188,9 +224,55 @@ def is_human_handover_request(message: str) -> bool:
     return any(kw in text for kw in HUMAN_HANDOVER_KEYWORDS)
 
 
+def sanitize_incoming_text(raw: str | None) -> str:
+    """Normalises any free-text field taken off a WhatsApp webhook payload
+    before it reaches a regex, a DB query or a DB column.
+
+    Deliberately conservative — this is a normaliser, not a content filter.
+    Prompt-injection defence lives in app.knowledge_base.security
+    (sanitize_untrusted_text / the CTX fence), and product/category matching
+    is exact-match against DB values, so the job here is only to stop
+    malformed or oversized input from reaching the layers below:
+
+      - Strips C0/C1 control characters, which can corrupt log output and
+        confuse the numeric-selection parsers, while keeping \\n and \\t.
+      - Collapses the runaway whitespace WhatsApp forwards sometimes carry.
+      - Truncates to MAX_INBOUND_TEXT_CHARS so an oversized body can't blow a
+        String(n) column on insert (snapshot_customer_name is String(120))
+        or make the catch-all regexes in this module pathological.
+
+    Returns "" for None so callers never have to guard for it.
+    """
+    if not raw:
+        return ""
+
+    # Keep \n and \t; drop every other control char including the C1 range.
+    cleaned = "".join(
+        ch for ch in raw if ch in ("\n", "\t") or (ord(ch) >= 32 and ord(ch) != 127)
+    )
+    # Collapse runs of 3+ blank lines and any run of spaces/tabs.
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = cleaned.strip()
+
+    if len(cleaned) > MAX_INBOUND_TEXT_CHARS:
+        cleaned = cleaned[:MAX_INBOUND_TEXT_CHARS].rstrip()
+
+    return cleaned
+
+
 def get_or_create_marketplace_session(
     phone_number: str, db: Session
 ) -> MarketplaceSession:
+    """Fetches (or creates) the customer's marketplace session and enforces
+    MARKETPLACE_SESSION_TTL.
+
+    The TTL check happens here rather than in handle_marketplace_step because
+    this is the single chokepoint every inbound message passes through —
+    message_processor calls it before any branching, including the branches
+    that never reach handle_marketplace_step at all. That is precisely the gap
+    that let 'awaiting_product_choice' persist for days.
+    """
     session = (
         db.query(MarketplaceSession)
         .filter(MarketplaceSession.phone_number == phone_number)
@@ -201,6 +283,37 @@ def get_or_create_marketplace_session(
         db.add(session)
         db.commit()
         db.refresh(session)
+        return session
+
+    now = datetime.now(timezone.utc)
+
+    # updated_at is server_default=now() / onupdate=now(), so it should always
+    # be populated — but a row inserted by a raw SQL fixture or an older
+    # migration might not be. Treat a missing timestamp as "not stale" so a
+    # data quirk can never wipe a live session.
+    last_seen = session.updated_at
+    has_state = session.pending_action is not None or session.selected_business_id is not None
+
+    if last_seen is not None and has_state and (now - last_seen) > MARKETPLACE_SESSION_TTL:
+        idle_minutes = int((now - last_seen).total_seconds() // 60)
+        print(
+            f"[Marketplace] Session for {phone_number} idle {idle_minutes}m "
+            f"(action={session.pending_action!r}, business={session.selected_business_id}) "
+            f"— resetting to menu"
+        )
+        reset_to_menu(session, db)
+        return session
+
+    # Touch updated_at on every message so the TTL measures customer
+    # inactivity, not time-since-last-state-change. Without this, the pure-LLM
+    # Q&A path (which mutates no session columns) would let updated_at go stale
+    # under an actively chatting customer and reset them mid-conversation.
+    #
+    # Assigned explicitly rather than relying on onupdate= because SQLAlchemy
+    # only fires onupdate when some other column is actually dirty.
+    session.updated_at = now
+    db.commit()
+
     return session
 
 
@@ -217,12 +330,22 @@ def is_status_command(message: str) -> bool:
 
 
 def reset_to_menu(session: MarketplaceSession, db: Session) -> None:
+    """Returns the customer to the top-level marketplace menu.
+
+    Clears last_product_id/last_product_at as well: that pair is the "photo
+    request with no named product" fallback, and it is scoped to one store.
+    Carrying it across a store switch is how a photo request in the new store
+    could be answered with the previous store's product.
+    """
     session.selected_business_id = None
     session.selected_business_type = None
+    session.selected_category = None
     session.selected_product_id = None
     session.selected_size = None
     session.pending_action = None
     session.list_offset = 0
+    session.last_product_id = None
+    session.last_product_at = None
     db.commit()
 
 
@@ -296,7 +419,7 @@ def get_categories_for_business(db: Session, business_id: uuid.UUID) -> list[Cat
 def get_category_id_for_business(
     db: Session,
     business_id: uuid.UUID,
-    category_name: str,
+    category_name: str | None,
 ) -> uuid.UUID | None:
     """Resolves (business_id, category_name) -> category_id.
 
@@ -308,7 +431,14 @@ def get_category_id_for_business(
     rather than trusting a stale id from an earlier, unrelated shopping
     session). One function means both stay in sync if the lookup logic
     (e.g. is_active filtering) ever changes.
+
+    Returns None for a missing business_id or a blank category name rather than
+    emitting `WHERE name IS NULL`, which would silently match nothing and read
+    as "category doesn't exist" instead of "no category was asked for".
     """
+    if not business_id or not category_name or not str(category_name).strip():
+        return None
+
     category = (
         db.query(Category)
         .filter(
@@ -333,6 +463,31 @@ def get_products_for_category(
             Product.category_id == category_id,
             Product.is_available,
         )
+        .order_by(Product.name)
+        .all()
+    )
+
+
+def get_products_for_business(db: Session, business_id: uuid.UUID) -> list[Product]:
+    """Every purchasable product for one business, regardless of category.
+
+    The category-agnostic path. Needed because a product's category_id is
+    nullable, so a product that was never assigned a category is invisible to
+    every category-scoped query — it can't be listed, chosen by name, or have
+    its photo sent, even though it shows up in the LLM's flat catalog and the
+    owner's dashboard. This is also the fallback whenever no category is
+    selected on the session.
+
+    Note the flag is `is_available`, not `is_active`: Product uses
+    is_available, while User and Category use is_active.
+    """
+    return (
+        db.query(Product)
+        .filter(
+            Product.business_id == business_id,
+            Product.is_available,
+        )
+        .order_by(Product.name)
         .all()
     )
 
@@ -340,11 +495,40 @@ def get_products_for_category(
 def get_products_for_business_category(
     db: Session,
     business_id: uuid.UUID,
-    category_name: str,
+    category_name: str | None,
 ) -> list[Product]:
+    """Products for (business, category), falling back to the full catalog.
+
+    Two distinct fallbacks, both deliberate:
+
+    1. No category selected — the customer is in the store but hasn't picked a
+       category (a fresh session, or the active-business Redis cache reopening
+       a store without one). Showing the whole catalog is strictly better than
+       showing nothing, which is what returning [] used to do and is a large
+       part of "products not displaying for specific businesses".
+
+    2. Category named but unresolvable for THIS business — a stale, renamed or
+       deactivated category name on the session. Also falls back to the full
+       catalog, and logs, because the customer is standing in a real store.
+
+    An empty-but-real category still correctly yields []: the name resolves, so
+    we take the scoped path and simply find no rows. That keeps the "we don't
+    have items in that category right now" reply reachable.
+    """
+    if not business_id:
+        return []
+
+    if not category_name or not str(category_name).strip():
+        return get_products_for_business(db, business_id)
+
     category_id = get_category_id_for_business(db, business_id, category_name)
     if not category_id:
-        return []
+        print(
+            f"[Marketplace] Category {category_name!r} not found for business "
+            f"{business_id} — falling back to full catalog"
+        )
+        return get_products_for_business(db, business_id)
+
     return get_products_for_category(db, business_id, category_id)
 
 
@@ -370,10 +554,12 @@ def _format_product_list(products: list[Product]) -> str:
 
 def resolve_product_choice(
     business_id: uuid.UUID,
-    category_name: str,
+    category_name: str | None,
     message: str,
     db: Session,
 ) -> Product | None:
+    if not business_id:
+        return None
     products = get_products_for_business_category(db, business_id, category_name)
     names = [p.name.strip() for p in products]
     choice = _resolve_choice(message, names)
@@ -407,18 +593,36 @@ def resolve_product_choice(
 
 def _resolve_photo_target(marketplace_session, business_id: uuid.UUID, message_text: str, db: Session) -> Product | None:
     matched_product = resolve_product_choice(
-        business_id=business_id, category_name=marketplace_session.selected_business_type,
+        business_id=business_id, category_name=marketplace_session.selected_category,
         message=message_text, db=db,
     )
     if matched_product:
         return matched_product
     if not marketplace_session.last_product_id:
         return None
-    is_fresh = (datetime.now(timezone.utc) - marketplace_session.updated_at) < STALE_PHOTO_WINDOW
-    if not is_fresh:
+
+    # Measured against last_product_at (when the product was actually viewed),
+    # not updated_at. updated_at is touched on every inbound message so the
+    # session TTL can measure real inactivity, which would make this check
+    # permanently true.
+    last_seen_product_at = marketplace_session.last_product_at
+    if last_seen_product_at is None:
+        return None
+    if (datetime.now(timezone.utc) - last_seen_product_at) >= STALE_PHOTO_WINDOW:
         return None
 
-    last_product = db.query(Product).filter(Product.id == marketplace_session.last_product_id).first()
+    # business_id is part of the filter, not just checked afterwards: this is
+    # a customer-supplied id path (last_product_id survives across store
+    # switches), so a row from another tenant must never be loaded at all.
+    last_product = (
+        db.query(Product)
+        .filter(
+            Product.id == marketplace_session.last_product_id,
+            Product.business_id == business_id,
+            Product.is_available,
+        )
+        .first()
+    )
     if not last_product:
         return None
 
@@ -430,7 +634,7 @@ def _resolve_photo_target(marketplace_session, business_id: uuid.UUID, message_t
     # customer is asking about now — which is exactly what caused Carpet
     # to get matched to a Crocs photo request.
     current_category_id = get_category_id_for_business(
-        db, business_id, marketplace_session.selected_business_type
+        db, business_id, marketplace_session.selected_category
     )
     if current_category_id and last_product.category_id == current_category_id:
         return last_product
@@ -514,8 +718,17 @@ def find_mentioned_alternate_variant(
     return None
 
 def parse_quantity(text: str) -> int | None:
+    """Reads a 1–100 quantity from a customer reply, or None.
+
+    Length-capped before int() for the same reason as _resolve_choice:
+    str.isdigit() is True for a run of any length and Python ints are
+    unbounded, so an enormous digit payload would be fully converted before the
+    range check discarded it.
+    """
+    if not text:
+        return None
     text_clean = text.strip()
-    if text_clean.isdigit():
+    if text_clean.isdigit() and len(text_clean) <= MAX_MENU_SELECTION_DIGITS:
         qty = int(text_clean)
         if 1 <= qty <= 100:
             return qty
@@ -525,11 +738,28 @@ def parse_quantity(text: str) -> int | None:
 def add_item_to_cart(
     cart: Cart, product: Product, size: str | None, qty: int, db: Session
 ) -> None:
+    """Adds (or increments) a line in the cart.
+
+    The tenant assertion is the last line of defence for the cart: Cart is
+    keyed on (phone_number, business_id) while Product carries its own
+    business_id, and nothing in the JSON items blob records which store a line
+    came from. If those two ever disagree we would silently build a cart — and
+    then Orders — mixing two businesses' products. Refusing loudly beats
+    writing corrupt cross-tenant order rows.
+    """
+    if product.business_id != cart.business_id:
+        raise ValueError(
+            f"Refusing to add product {product.id} (business "
+            f"{product.business_id}) to cart for business {cart.business_id}"
+        )
+
     items = list(cart.items or [])
 
     for item in items:
-        if item["product_id"] == str(product.id) and item.get("size") == size:
-            item["qty"] += qty
+        # .get() rather than [] — cart.items is a JSON blob that may predate
+        # the current line shape, and a KeyError here would abort the add.
+        if item.get("product_id") == str(product.id) and item.get("size") == size:
+            item["qty"] = item.get("qty", 0) + qty
             cart.items = items
             db.commit()
             return
@@ -563,7 +793,22 @@ def format_cart_summary(cart: Cart) -> str:
     return "\n".join(lines)
 
 
+MAX_CUSTOMER_NAME_CHARS = 80
+
+
 def parse_name_and_contact(text: str) -> tuple[str, str]:
+    """Splits a checkout reply like 'John Doe 0712345678' into (name, phone).
+
+    Both outputs land in Order.snapshot_customer_name / _phone and are echoed
+    straight back to the customer, so the name is length-capped and stripped of
+    newlines. The columns are unbounded String (no truncation error to avoid),
+    but an 800-character "name" pasted into a confirmation message — and into
+    the business's dashboard — is its own problem.
+    """
+    text = sanitize_incoming_text(text)
+    if not text:
+        return "Customer", ""
+
     phone_match = re.search(r"(\+?254|0)[71]\d{8}", text)
     contact = phone_match.group(0) if phone_match else ""
     name = text
@@ -572,19 +817,58 @@ def parse_name_and_contact(text: str) -> tuple[str, str]:
     name = re.sub(
         r"\b(my|contact|is|number|phone)\b", "", name, flags=re.IGNORECASE
     ).strip(" ,:-")
+
+    # Collapse to a single line and cap — a checkout name is never multi-line.
+    name = " ".join(name.split())
+    if len(name) > MAX_CUSTOMER_NAME_CHARS:
+        name = name[:MAX_CUSTOMER_NAME_CHARS].rstrip()
+
     return (name or "Customer"), contact
 
 
 def create_orders_from_cart(
     cart: Cart, business: User, customer: Customer, name: str, contact: str, db: Session
 ) -> list[Order]:
+    """Turns the cart's JSON items into one Order row per line.
+
+    Every line is re-validated against the DB before it becomes an Order.
+    cart.items is a JSON blob that has been sitting in Postgres since the
+    customer last shopped, so by checkout time a product may have been
+    deleted, pulled from sale, or (if anything upstream ever mismatched)
+    belong to a different business entirely. Trusting the blob's product_id
+    verbatim is what would let a cross-tenant product_id reach an Order row
+    stamped with this business_id.
+
+    Skipped lines are logged and dropped rather than aborting the whole
+    checkout — a customer with three good items and one delisted one should
+    still get their order.
+    """
     group_id = uuid.uuid4()
     orders = []
-    for item in cart.items:
+    for item in cart.items or []:
+        raw_product_id = item.get("product_id")
+        try:
+            product_id = uuid.UUID(str(raw_product_id))
+        except (ValueError, AttributeError, TypeError):
+            print(f"[Checkout] Dropping cart line with malformed product_id {raw_product_id!r}")
+            continue
+
+        product = (
+            db.query(Product)
+            .filter(Product.id == product_id, Product.business_id == business.id)
+            .first()
+        )
+        if product is None:
+            print(
+                f"[Checkout] Dropping cart line {product_id} — not a product of "
+                f"business {business.id}"
+            )
+            continue
+
         order = Order(
             order_group_id=group_id,
             customer_id=customer.id,
-            product_id=uuid.UUID(item["product_id"]),
+            product_id=product_id,
             business_id=business.id,
             quantity=item["qty"],
             total_amount=item["qty"] * item["unit_price"],
@@ -606,13 +890,62 @@ def extract_order_ref(message: str) -> str | None:
 
 
 def get_orders_by_reference(ref: str, phone_number: str, db: Session) -> list[Order]:
+    """Looks up an order group by its short (8-hex) customer-facing reference.
+
+    Deliberately NOT scoped to one business: a customer who quotes a reference
+    should be able to check it whichever store it came from — message_processor
+    advertises exactly that ("If you have an order reference from another
+    store..."). The tenant boundary that matters here is the CUSTOMER, and it
+    is enforced by the Customer.phone_number join: the prefix match can only
+    ever reach order groups belonging to this phone number, so a guessed or
+    enumerated prefix cannot surface anybody else's order.
+
+    ref is re-validated rather than trusted from the caller — it reaches a LIKE
+    pattern, so anything that isn't plain hex is rejected outright instead of
+    being interpolated (a bare '%' would otherwise match every one of the
+    caller's own orders).
+    """
+    if not ref:
+        return []
+    ref_clean = ref.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{4,32}", ref_clean):
+        return []
+
     return (
         db.query(Order)
         .join(Customer, Order.customer_id == Customer.id)
         .filter(
             Customer.phone_number == phone_number,
-            func.cast(Order.order_group_id, String).like(f"{ref.lower()}%"),
+            func.cast(Order.order_group_id, String).like(f"{ref_clean}%"),
         )
+        .order_by(Order.created_at)
+        .all()
+    )
+
+
+def _orders_in_group(
+    db: Session,
+    order_group_id: uuid.UUID,
+    *,
+    customer_id: uuid.UUID,
+    business_id: uuid.UUID,
+) -> list[Order]:
+    """Expands an order_group_id to its sibling rows, re-scoped.
+
+    An order_group_id is a uuid4 minted per checkout, so in practice every row
+    in a group shares one customer and one business. This re-asserts that in
+    the WHERE clause anyway: the group id is derived from a row we reached via
+    a customer's phone number, and "trust the uuid, skip the tenant predicate"
+    is exactly the pattern that turns one bad row into a cross-tenant read.
+    """
+    return (
+        db.query(Order)
+        .filter(
+            Order.order_group_id == order_group_id,
+            Order.customer_id == customer_id,
+            Order.business_id == business_id,
+        )
+        .order_by(Order.created_at)
         .all()
     )
 
@@ -629,12 +962,20 @@ def get_latest_orders_for_customer(phone_number: str, db: Session) -> list[Order
         return []
     if not latest.order_group_id:
         return [latest]
-    return db.query(Order).filter(Order.order_group_id == latest.order_group_id).all()
+    return _orders_in_group(
+        db,
+        latest.order_group_id,
+        customer_id=latest.customer_id,
+        business_id=latest.business_id,
+    )
 
 
 def get_latest_orders_for_business(
     phone_number: str, business_id: uuid.UUID, db: Session
 ) -> list[Order]:
+    if not business_id:
+        return []
+
     latest = (
         db.query(Order)
         .join(Customer, Order.customer_id == Customer.id)
@@ -646,7 +987,12 @@ def get_latest_orders_for_business(
         return []
     if not latest.order_group_id:
         return [latest]
-    return db.query(Order).filter(Order.order_group_id == latest.order_group_id).all()
+    return _orders_in_group(
+        db,
+        latest.order_group_id,
+        customer_id=latest.customer_id,
+        business_id=business_id,
+    )
 
 def format_order_status(orders: list[Order]) -> str:
     if not orders:
@@ -747,6 +1093,35 @@ def notify_cancelled(order: Order, business: User, db: Session, was_paid: bool) 
 
 
 
+def load_session_product(
+    session: MarketplaceSession, db: Session
+) -> Product | None:
+    """Loads session.selected_product_id, scoped to session.selected_business_id.
+
+    Replaces `db.query(Product).get(session.selected_product_id)`, which looked
+    up a product by primary key with no tenant predicate at all. selected_
+    product_id outlives a store switch, so an id belonging to store A could be
+    loaded while the customer was in store B — and the awaiting_quantity branch
+    would then hand it to add_item_to_cart against store B's cart, producing an
+    Order row with store B's business_id and store A's product_id.
+
+    is_available is included so an item pulled from sale mid-flow drops the
+    customer back to the product list instead of being added to a cart.
+    """
+    if not session.selected_product_id or not session.selected_business_id:
+        return None
+
+    return (
+        db.query(Product)
+        .filter(
+            Product.id == session.selected_product_id,
+            Product.business_id == session.selected_business_id,
+            Product.is_available,
+        )
+        .first()
+    )
+
+
 def handle_marketplace_step(
     session: MarketplaceSession, message: str, db: Session
 ) -> tuple[str, list[str] | None]:
@@ -757,13 +1132,17 @@ def handle_marketplace_step(
             None,
         )
 
+    # Secondary, pre-store-entry staleness check. The primary TTL now lives in
+    # get_or_create_marketplace_session (MARKETPLACE_SESSION_TTL, 15 min) and
+    # covers customers inside a store too, which this branch never could.
     if session.pending_action is not None and session.selected_business_id is None:
-        is_stale = (datetime.now(timezone.utc) - session.updated_at) > timedelta(
-            hours=SESSION_TIMEOUT_HOURS
-        )
+        is_stale = session.updated_at is not None and (
+            datetime.now(timezone.utc) - session.updated_at
+        ) > timedelta(hours=SESSION_TIMEOUT_HOURS)
         if is_stale:
             session.pending_action = None
             session.selected_business_type = None
+            session.selected_category = None
             session.list_offset = 0
             db.commit()
 
@@ -798,7 +1177,17 @@ def handle_marketplace_step(
                 )
             return "Sorry, please reply with a number from the list above.", None
 
-        matched_category = next(c for c in categories if c.title() == choice)
+        matched_category = next((c for c in categories if c.title() == choice), None)
+        if matched_category is None:
+            # _resolve_choice returned an option that is no longer in the
+            # category list (it was deactivated between the menu render and
+            # the reply). Re-render rather than raising StopIteration, which is
+            # what the bare next() here used to do.
+            return (
+                "That option isn't available anymore — please pick another.",
+                _menu_items_for_offset(titled_categories, 0),
+            )
+
         businesses = get_businesses_by_category(db, matched_category)
 
         if not businesses:
@@ -807,7 +1196,10 @@ def handle_marketplace_step(
                 None,
             )
 
-        session.selected_business_type = matched_category
+        # The CATEGORY goes in selected_category. selected_business_type is
+        # left for the business's own classification, set once a store is
+        # actually chosen in the select_business branch below.
+        session.selected_category = matched_category
         session.pending_action = "select_business"
         session.list_offset = 0
         db.commit()
@@ -815,7 +1207,7 @@ def handle_marketplace_step(
         return "Here are stores for you:", _menu_items_for_offset(store_names, 0)
 
     if session.pending_action == "select_business":
-        businesses = get_businesses_by_category(db, session.selected_business_type)
+        businesses = get_businesses_by_category(db, session.selected_category)
         store_names = [b.business_name.strip() for b in businesses]
         choice, next_page = _resolve_paginated_choice(message, store_names, session, db)
 
@@ -833,17 +1225,35 @@ def handle_marketplace_step(
                 )
             return "Sorry, please reply with a number from the list above.", None
 
-        chosen = next(b for b in businesses if b.business_name.strip() == choice)
+        chosen = next(
+            (b for b in businesses if b.business_name.strip() == choice), None
+        )
+        if chosen is None:
+            # Store deactivated (or renamed) between rendering the list and the
+            # customer's reply. Re-render instead of raising StopIteration.
+            return (
+                "That store isn't available anymore — please pick another.",
+                _menu_items_for_offset(store_names, 0),
+            )
+
         session.selected_business_id = chosen.id
+        # Now that a real store is chosen, selected_business_type finally holds
+        # what its name claims: the store's own classification. Nothing reads it
+        # for filtering — it's for analytics and for the top-level routing this
+        # column was always meant to describe.
+        session.selected_business_type = (
+            chosen.business_type.value
+            if getattr(chosen, "business_type", None) is not None
+            else None
+        )
         session.pending_action = "awaiting_product_choice"
         session.list_offset = 0
         db.commit()
         cart = get_or_create_cart(session.phone_number, chosen.id, db)
 
         products = get_products_for_business_category(
-            db, chosen.id, session.selected_business_type
+            db, chosen.id, session.selected_category
         )
-        has_photos = any(p.image_url for p in products)
 
         if not products:
             welcome = (
@@ -851,23 +1261,20 @@ def handle_marketplace_step(
                 "We don't have items in that category right now — want to see "
                 "something else? Reply 'menu' to browse other stores."
             )
-        elif has_photos:
-            product_text = format_product_list_for_business(
-                db, chosen.id, session.selected_business_type
-            )
-            welcome = (
-                f"Welcome to {chosen.business_name}! Here's what we have in "
-                f"{session.selected_business_type}:\n\n"
-                + product_text
-                + "\n\n_Tip: reply 'menu' anytime to browse other stores._"
-            )
         else:
+            # The has_photos branch used to exist here, but both arms built an
+            # identical message — the photos are sent separately by
+            # message_processor._send_product_photos, not from this text.
             product_text = format_product_list_for_business(
-                db, chosen.id, session.selected_business_type
+                db, chosen.id, session.selected_category
+            )
+            heading = (
+                f"Here's what we have in {session.selected_category}"
+                if session.selected_category
+                else "Here's what we have"
             )
             welcome = (
-                f"Welcome to {chosen.business_name}! Here's what we have in "
-                f"{session.selected_business_type}:\n\n"
+                f"Welcome to {chosen.business_name}! {heading}:\n\n"
                 + product_text
                 + "\n\n_Tip: reply 'menu' anytime to browse other stores._"
             )
@@ -881,7 +1288,7 @@ def handle_marketplace_step(
 
     if session.pending_action == "awaiting_product_choice":
         product = resolve_product_choice(
-            session.selected_business_id, session.selected_business_type, message, db
+            session.selected_business_id, session.selected_category, message, db
         )
         if product is None:
             return (
@@ -909,7 +1316,7 @@ def handle_marketplace_step(
         return f"Great choice! How many *{product.name}* would you like?", None
 
     if session.pending_action == "awaiting_size":
-        product = db.query(Product).get(session.selected_product_id)
+        product = load_session_product(session, db)
         if product is None:
             session.pending_action = "awaiting_product_choice"
             session.selected_product_id = None
@@ -940,7 +1347,7 @@ def handle_marketplace_step(
                 None,
             )
 
-        product = db.query(Product).get(session.selected_product_id)
+        product = load_session_product(session, db)
         if product is None:
             session.pending_action = "awaiting_product_choice"
             session.selected_product_id = None
@@ -957,6 +1364,7 @@ def handle_marketplace_step(
         add_item_to_cart(cart, product, session.selected_size, qty, db)
 
         session.last_product_id = product.id
+        session.last_product_at = datetime.now(timezone.utc)
         session.selected_product_id = None
         session.selected_size = None
         session.pending_action = "post_add"
@@ -988,7 +1396,7 @@ def handle_marketplace_step(
         session.pending_action = "awaiting_product_choice"
         db.commit()
         product_text = format_product_list_for_business(
-            db, session.selected_business_id, session.selected_business_type
+            db, session.selected_business_id, session.selected_category
         )
         return product_text, None
 
@@ -1007,7 +1415,24 @@ def handle_marketplace_step(
                 session.phone_number
             )
 
-        business = db.query(User).get(session.selected_business_id)
+        # Confirm the store still exists and is active before creating orders
+        # against it. This used to be db.query(User).get(...) with no active
+        # check and no None guard, so a deactivated store produced an
+        # AttributeError deep inside create_orders_from_cart (on
+        # business.business_name) after the cart had already been read.
+        business = (
+            db.query(User)
+            .filter(User.id == session.selected_business_id, User.is_active)
+            .first()
+        )
+        if business is None:
+            reset_to_menu(session, db)
+            return (
+                "Sorry, that store is no longer available. Reply 'menu' to "
+                "browse other stores.",
+                None,
+            )
+
         customer = (
             db.query(Customer)
             .filter(
@@ -1059,10 +1484,16 @@ def handle_marketplace_step(
 def format_product_list_for_business(
     db: Session,
     business_id: uuid.UUID,
-    category_name: str,
+    category_name: str | None,
 ) -> str:
-    """Public wrapper so router.py can resend the product list (e.g. after
-    an 'Add More' tap) without duplicating _format_product_list's logic."""
+    """Public wrapper so message_processor.py can resend the product list (e.g.
+    after an 'Add More' tap) without duplicating _format_product_list's logic.
+
+    Inherits get_products_for_business_category's full-catalog fallback, so a
+    session with no category selected now lists the store's products instead of
+    rendering the "nothing in that category" message at a customer who is
+    standing in a stocked store.
+    """
     products = get_products_for_business_category(db, business_id, category_name)
     return _format_product_list(products)
 
@@ -1076,12 +1507,29 @@ def _format_numbered_list(items: list[str]) -> str:
 
 
 def _resolve_choice(text: str, options: list[str]):
+    """Maps a customer reply onto one of `options`, by 1-based index or by an
+    exact case-insensitive name match.
+
+    The digit-length cap matters: `str.isdigit()` is True for arbitrarily long
+    runs, and Python ints are unbounded, so a 100k-digit payload would be
+    converted in full before the range check rejected it. Bounding the length
+    first keeps this O(1) on hostile input.
+    """
+    if not text or not options:
+        return None
+
     text = text.strip().lower()
+    if not text:
+        return None
+
     if text.isdigit():
+        if len(text) > MAX_MENU_SELECTION_DIGITS:
+            return None
         idx = int(text) - 1
         if 0 <= idx < len(options):
             return options[idx]
         return None
+
     for opt in options:
         if opt.lower() == text:
             return opt
