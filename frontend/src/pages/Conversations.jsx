@@ -3,7 +3,7 @@ import {
   MessageSquare, AlertTriangle, Phone, Clock,
   UserCheck, CheckCircle, Send, Bot, User
 } from 'lucide-react'
-import { getInbox, getThread, takeOver, resolve, sendReply } from '../api/conversations'
+import { getInbox, getThread, takeOver, resolve, sendReply, getHandoverHistory } from '../api/conversations'
 import { useWebSocket  } from '../context/WebSocketContext'
 
 const HANDOVER_PHRASE = 'Let me connect you with our team'
@@ -99,6 +99,7 @@ export default function Conversations() {
   const [sending,         setSending]         = useState(false)
   const [replyError,      setReplyError]      = useState(null)
   const [actionLoading,   setActionLoading]   = useState(false)
+  const [handoverHistory, setHandoverHistory] = useState([])
   const { isConnected, lastMessage, sendMessage } = useWebSocket()
 
   const threadEndRef = useRef(null)
@@ -131,13 +132,13 @@ export default function Conversations() {
   useEffect(() => {
     if (lastMessage?.type === 'status_change') {
       const { customer_id, new_status } = lastMessage
-      
+
       // Update status in local state
       setStatuses(prev => ({
         ...prev,
         [customer_id]: new_status
       }))
-      
+
       // If this is the selected conversation, update its status
       if (selected?.customer_id === customer_id) {
         setSelected(prev => prev ? {
@@ -145,7 +146,7 @@ export default function Conversations() {
           conversation_status: new_status
         } : null)
       }
-      
+
       // Refresh inbox in background
       getInbox()
         .then(data => {
@@ -154,7 +155,7 @@ export default function Conversations() {
         })
         .catch(() => {})
     }
-    
+
     if (lastMessage?.type === 'new_message') {
       // If this is the selected conversation, refresh the thread
       if (selected?.customer_id === lastMessage.customer_id) {
@@ -201,6 +202,7 @@ export default function Conversations() {
   function openThread(customer) {
     setSelected(customer)
     setThread(null)
+    setHandoverHistory([])
     setReplyText('')
     setReplyError(null)
     setLoadingThread(true)
@@ -215,6 +217,10 @@ export default function Conversations() {
       })
       .catch(() => setThread(null))
       .finally(() => setLoadingThread(false))
+
+    getHandoverHistory(customer.customer_id)
+      .then(setHandoverHistory)
+      .catch(() => setHandoverHistory([]))
   }
 
   const refreshThread = () => {
@@ -230,6 +236,10 @@ export default function Conversations() {
       })
       .catch(() => setThread(null))
       .finally(() => setLoadingThread(false))
+
+    getHandoverHistory(selected.customer_id)
+      .then(setHandoverHistory)
+      .catch(() => setHandoverHistory([]))
   }
 
   async function handleTakeOver() {
@@ -251,6 +261,11 @@ export default function Conversations() {
     try {
       await resolve(selected.customer_id)
       setStatuses(prev => ({ ...prev, [selected.customer_id]: 'resolved' }))
+      // Refresh so resolved_at shows up and the "needs attention" list clears
+      // immediately instead of waiting for the next openThread/refreshThread.
+      getHandoverHistory(selected.customer_id)
+        .then(setHandoverHistory)
+        .catch(() => {})
     } catch (e) {
       console.error('Resolve failed', e)
     } finally {
@@ -297,6 +312,7 @@ export default function Conversations() {
   const currentStatus = selected ? (statuses[selected.customer_id] ?? 'ai_active') : null
   const isHumanActive = currentStatus === 'human_active'
   const isResolved    = currentStatus === 'resolved'
+  const openHandovers  = handoverHistory.filter(h => !h.resolved_at)
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -439,11 +455,25 @@ export default function Conversations() {
                 <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg
                                 bg-red-50 border border-red-100">
                   <AlertTriangle size={13} className="text-red-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-red-600">
-                    AISHA could not handle this — customer needs your direct reply.
-                    Click <strong>Take over</strong> to start replying, then{' '}
-                    <strong>Mark resolved</strong> when done so AISHA resumes.
-                  </p>
+                  <div className="flex-1">
+                    <p className="text-xs text-red-600">
+                      AISHA could not handle {openHandovers.length > 1 ? 'these questions' : 'this question'} — customer needs your direct reply.
+                    </p>
+                    {openHandovers.length > 0 && (
+                      <ul className="mt-1.5 space-y-1">
+                        {openHandovers.map(h => (
+                          <li key={h.id} className="text-xs text-red-700 bg-white/60 rounded px-2 py-1">
+                            "{h.trigger_message}"
+                            <span className="text-red-400 ml-1.5">· {timeAgo(h.created_at)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-xs text-red-600 mt-1.5">
+                      Click <strong>Take over</strong> to start replying, then{' '}
+                      <strong>Mark resolved</strong> when done so AISHA resumes.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -496,8 +526,8 @@ export default function Conversations() {
                       {group.messages.map((msg) => {
 
                         // Handover system event — centred pill
-                        if (msg.message_text === HANDOVER_PHRASE ||
-                            msg.message_text?.includes(HANDOVER_PHRASE)) {
+                        if (msg.content === HANDOVER_PHRASE ||
+                            msg.content?.includes(HANDOVER_PHRASE)) {
                           return (
                             <div key={msg.id} className="flex justify-center my-4">
                               <span className="flex items-center gap-1.5 text-xs
@@ -511,17 +541,17 @@ export default function Conversations() {
                         }
 
                         // Customer message — left aligned, white bubble
-                        if (msg.sender === 'customer') {
+                        if (msg.role === 'Customer') {
                           return (
                             <div key={msg.id} className="flex justify-start">
                               <div className="max-w-[68%]">
                                 <div className="bg-white border border-slate-200 text-slate-700
                                                 px-4 py-2.5 rounded-2xl rounded-tl-sm
                                                 text-sm leading-relaxed">
-                                  {msg.message_text}
+                                  {msg.content}
                                 </div>
                                 <p className="text-[10px] text-slate-400 mt-1 ml-1">
-                                  {formatTime(msg.timestamp)}
+                                  {formatTime(msg.created_at)}
                                   {msg.language !== 'en' && (
                                     <span className="ml-1.5 uppercase font-medium text-slate-500">
                                       {msg.language}
@@ -534,18 +564,18 @@ export default function Conversations() {
                         }
 
                         // AISHA reply — right aligned, amber bubble
-                        if (msg.sender === 'assistant') {
+                        if (msg.role === 'Assistant') {
                           return (
                             <div key={msg.id} className="flex justify-end">
                               <div className="max-w-[68%]">
                                 <div className="bg-amber-500 text-white px-4 py-2.5
                                                 rounded-2xl rounded-tr-sm text-sm leading-relaxed">
-                                  {msg.message_text}
+                                  {msg.content}
                                 </div>
                                 <div className="flex items-center justify-end gap-1 mt-1 mr-1">
                                   <Bot size={9} className="text-amber-400" />
                                   <p className="text-[10px] text-slate-400">
-                                    AISHA · {formatTime(msg.timestamp)}
+                                    AISHA · {formatTime(msg.created_at)}
                                   </p>
                                 </div>
                               </div>
@@ -555,7 +585,7 @@ export default function Conversations() {
 
                         // Human (owner) reply — right aligned, slate bubble
                         // Shows delivery failure indicator if Twilio didn't deliver
-                        if (msg.sender === 'human') {
+                        if (msg.role === 'Human') {
   const deliveryFailed = msg.delivery_status === 'failed'
   return (
     <div key={msg.id} className="flex justify-end">
@@ -565,21 +595,21 @@ export default function Conversations() {
                         ${deliveryFailed
                           ? 'bg-slate-700 ring-1 ring-red-400'
                           : 'bg-slate-700'}`}>
-          {msg.message_text}
+          {msg.content}
         </div>
         <div className="flex items-center justify-end gap-1 mt-1 mr-1">
           {deliveryFailed ? (
             <>
               <AlertTriangle size={9} className="text-red-400" />
               <p className="text-[10px] text-red-400">
-                Not delivered · {formatTime(msg.timestamp)}
+                Not delivered · {formatTime(msg.created_at)}
               </p>
             </>
           ) : (
             <>
               <User size={9} className="text-slate-400" />
               <p className="text-[10px] text-slate-400">
-                You · {formatTime(msg.timestamp)}
+                You · {formatTime(msg.created_at)}
               </p>
             </>
           )}
@@ -587,7 +617,7 @@ export default function Conversations() {
       </div>
     </div>
   )
-}     
+}
 
                         return null
                       })}
@@ -670,3 +700,4 @@ export default function Conversations() {
     </div>
   )
 }
+

@@ -1,10 +1,11 @@
 import asyncio
-import websockets
 import json
+
+import websockets
 
 
 async def test_websocket():
-    uri = "ws://127.0.0.1:8000/ws/conversations/1"
+    uri = "ws://localhost:8000/ws/conversations/1"
     print(f"🔌 Connecting to {uri}...")
 
     try:
@@ -39,7 +40,7 @@ async def test_websocket():
         print(f"❌ Connection closed: {e}")
     except ConnectionRefusedError:
         print("❌ Connection refused. Is FastAPI running?")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Error: {e}")
         print(f"Error type: {type(e)}")
 

@@ -10,13 +10,9 @@ from pathlib import Path
 class TenantPathError(ValueError):
     """Triggered when a user tries to break out of their folder or sends a fake path."""
 
-    pass
-
 
 class TenantNotProvisionedError(FileNotFoundError):
     """Triggered when someone tries to read files before the business folder is created."""
-
-    pass
 
 
 # --- THE HIGH-SECURITY RESOLVER CLASS ---

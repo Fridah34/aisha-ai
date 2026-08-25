@@ -1,0 +1,48 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      # uploads/* is in .dockerignore, so product images are NOT baked into
+      # the image. Without this bind mount /app/uploads/products is empty and
+      # BASE_URL/uploads/... 404s, which breaks Twilio media sends.
+      - ./backend/uploads:/app/uploads
+      # aisha_voice.txt IS baked into the image by `COPY . .`, so this mount is
+      # a convenience, not a requirement — it lets prompt edits take effect on
+      # `docker compose restart` without a rebuild. Scoped to system_prompts/
+      # rather than the whole knowledge_base/ on purpose: mounting the parent
+      # would shadow the image's clean_wiki/ with whatever the host happens to
+      # have. Read-only because nothing should ever write the persona at runtime.
+      - ./backend/knowledge_base/system_prompts:/app/knowledge_base/system_prompts:ro
+    restart: unless-stopped
+
+  # Consumer for the `messages` queue that /webhook enqueues to.
+  # Same image and same .env as backend, so it talks to the same Upstash Redis.
+  worker:
+    build: ./backend
+    command: ["python", "-u", "worker.py"]
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/uploads:/app/uploads
+      # The worker is the process that actually builds the prompt on a cache
+      # miss, so it needs the same view of system_prompts/ as backend.
+      - ./backend/knowledge_base/system_prompts:/app/knowledge_base/system_prompts:ro
+    # The image's HEALTHCHECK curls localhost:8000; this container has no HTTP
+    # server, so it would be permanently "unhealthy" without disabling it.
+    healthcheck:
+      disable: true
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

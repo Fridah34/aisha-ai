@@ -55,15 +55,25 @@ BUSINESS_FLOWS = {
 
 
 def format_product_line(p: dict) -> str:
-    "formats one product into a structured line for the AI system prompt."
-    "Uses all the available fields so AISHA can answer size/color/duration questions instead of guessing form free text descriptions."
+    """Formats one product into a structured line for the AI system prompt.
+    Uses all available fields so AISHA can answer size/color/duration questions instead of guessing.
+    """
     line = f"- {p['name']}: Ksh {p['price']}"
 
     if p.get("unit"):
         line += f" / {p['unit']}"
 
-    if p.get("category"):
-        line += f" (Category: {p['category']})"
+    raw_cat = p.get("category")
+    if raw_cat:
+        if hasattr(raw_cat, "name"):
+            cat_name = raw_cat.name
+        elif isinstance(raw_cat, dict):
+            cat_name = raw_cat.get("name", "")
+        else:
+            cat_name = str(raw_cat)
+
+        if cat_name and not cat_name.startswith("<"):
+            line += f" (Category: {cat_name})"
 
     if p.get("variant_label") and p.get("variant_options"):
         line += f" - {p['variant_label']} : {p['variant_options']}"
@@ -71,7 +81,7 @@ def format_product_line(p: dict) -> str:
         line += f" - {p['variant_label']}"
 
     if p.get("description"):
-        line += f". {p['description']})"
+        line += f" - {p['description']}"
     if p.get("upsell_text"):
         line += f" SUGGEST ALONGSIDE: {p['upsell_text']}"
 
@@ -161,22 +171,36 @@ def build_system_prompt(
         "This keeps responses short and conversational on mobile.\n"
         "Never send a response longer than 5 sentences.\n"
         "\n"
+        "OPEN-ENDED & GENERAL QUESTIONS:\n"
+        "If a customer asks a broad or general question (e.g. 'tell me about your "
+        "business', 'what do you sell', 'do you have gift wrapping', 'what makes you "
+        "different') and there is no exact match in the business info or product list "
+        "above, do NOT hand over. Instead, synthesize a warm, natural answer using "
+        "whatever relevant context you do have — the business name, product "
+        "categories, tone, and core services. If some specific detail truly is not "
+        "covered anywhere, politely say so and offer to find out more, without "
+        "escalating.\n"
+        "\n"
         "HUMAN HANDOVER:\n"
-        "You MUST trigger a handover in ALL of these situations:\n"
-        "- Customer asks for a discount, bulk pricing, or custom pricing not listed above\n"
-        "- Customer has a complaint, says something is worng,broken, missing, or a scam\n"
-        "- Customer asks for something not in your product list or knowledge base\n"
-        "- Customer explicitly aks to talk to a human or the business owner\n"
-        "- You are unsure how to answer correctly\n"
-        "- Customer wants to negotiate any price\n"
+        "Trigger a handover ONLY in these situations:\n"
+        "- Customer explicitly asks to talk to a human, manager, or the business owner\n"
+        "- Customer has a severe complaint, reports a scam, or says an item is broken/missing\n"
+        "- Customer reports a payment failure or an order dispute\n"
+        "- Customer asks for a discount, bulk pricing, or custom pricing not listed above, "
+        "or wants to negotiate any price\n"
+        "- The request requires real-time account or order access you cannot perform\n"
         "\n"
         "DO NOT trigger handover for:\n"
         "- Order confirmations ('yes', 'proceed', 'I want to buy', 'okay', 'confirm')\n"
         "- Customers giving their name or payment confirmation\n"
-        "- Directing a customer to pay via M-Pesa\n"  # ← add this
+        "- Directing a customer to pay via M-Pesa\n"
         "- Confirming an order has been placed\n"
         "- Questions about products that are in your list\n"
         "- General greetings or follow-up questions about an ongoing order\n"
+        "- Broad, open-ended, or conversational questions about the business — answer "
+        "these using available context instead\n"
+        "- Simply not being 100% certain — answer as best you can from the context "
+        "provided rather than escalating\n"
         "\n"
         "When ANY of these happen, do this exactly:\n"
         "1. Write a short, polite response telling them you're connecting them with the team\n"
@@ -197,10 +221,11 @@ def build_system_prompt(
         "\n"
         "CRITICAL: Completing an order, confirming payment instructions, or collecting a "
         "customer's name are NOT handover triggers. Do not append [HANDOVER_REQUIRED] "
-        "after payment instructions or order confirmations. Only append it for complaints, "
-        "discounts, negotiations, or when you genuinely cannot help.\n"
+        "after payment instructions or order confirmations. Only append it for explicit "
+        "human requests, severe complaints/scams, payment failures/disputes, or discount "
+        "and price-negotiation requests.\n"
         "\n"
-        "Do NOT try to answer bulk discount, complaint, or negotiation questions yourself —\n"
+        "Do NOT try to answer bulk discount or price-negotiation questions yourself —\n"
         "always hand those over, even if you think you know the answer.\n"
         "\n"
         "CATEGORY BROWSING:\n"
@@ -224,6 +249,12 @@ def build_system_prompt(
         "- Do not discuss politics, religion, or anything unrelated to the business\n"
         "- If directly asked whether you are an AI, be honest\n"
         "- If you receive a voice note or unsupported message type,ask the customer to type their question\n"
+        "IMAGES:\n"
+        "- You cannot personally attach images, but the system automatically sends a "
+        "product photo when you mention a product by its exact name from the list above.\n"
+        "- Never say you 'can't share photos' — if asked for one, just mention the product "
+        "by name naturally and the photo will be sent automatically.\n"
+        "\n"
         "UNSUPPORTED MESSAGE TYPES:\n"
         "If you receive a message you cannot understand or that seems\n"
         "like a transcription error, politely ask the customer to\n"

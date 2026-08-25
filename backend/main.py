@@ -1,5 +1,9 @@
 import os
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
 import app.models
 from app.categories.router import router as categories_router
 from app.config import settings
@@ -11,15 +15,12 @@ from app.routes.auth import router as auth_router
 from app.settings.router import router as settings_router
 from app.webhook.router import router as webhook_router
 from app.websocket.router import router as websocket_router
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 # --- APPLICATION SETUP ---
-#Base.metadata.drop_all(bind=engine)
-#Base.metadata.create_all(bind=engine)
+# Base.metadata.drop_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
-print("DB HOST:", os.getenv("DATABASE_URL"))
+print("Database configuration loaded.")
 
 app = FastAPI(
     title="AISHA AI",

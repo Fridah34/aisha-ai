@@ -150,7 +150,7 @@ function ImageUploadZone({ currentUrl, onFile, disabled }) {
             <img
               src={preview.startsWith('blob:')
                 ? preview
-                : `http://127.0.0.1:8000${preview}`}
+                : `http://localhost:8000${preview}`}
               alt="Product preview"
               className="w-full h-full object-cover"
             />
@@ -218,7 +218,7 @@ function ProductCard({ product, onEdit, onDelete, onToggle, toggling }) {
       <div className="relative h-52 bg-slate-50 shrink-0">
         {product.image_url ? (
           <img
-            src={`http://127.0.0.1:8000${product.image_url}`}
+            src={`http://localhost:8000${product.image_url}`}
             alt={product.name}
             className="w-full h-full object-cover"
           />
@@ -892,7 +892,13 @@ export default function Products() {
       loadProducts()
       goToList()
     } catch (e) {
-      setFormError(e.message || 'Failed to save product.')
+      let message = 'Failed to save product.'
+      if (Array.isArray(e.detail)) {
+        message = e.detail.map(d => d.msg).join(', ')
+      } else if (typeof e.message === 'string') {
+        message = e.message
+      }
+      setFormError(message)
     } finally {
       setSaving(false)
     }

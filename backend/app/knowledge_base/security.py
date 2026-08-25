@@ -64,20 +64,21 @@ def sanitize_untrusted_text(text: str) -> str:
 _SUSPICIOUS_PATTERNS = [
     # English attack variants targeting system prompt rules
     re.compile(
-        r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b", re.I
+        r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b",
+        re.IGNORECASE,
     ),
-    re.compile(r"\bdisregard\s+(?:all\s+)?(?:previous|prior|above)\b", re.I),
-    re.compile(r"\byou\s+are\s+now\s+(?:a|an)\b", re.I),
-    re.compile(r"\bsystem\s*prompt\b", re.I),
-    re.compile(r"\breveal\s+(?:your|the)\s+(?:system\s+)?prompt\b", re.I),
+    re.compile(r"\bdisregard\s+(?:all\s+)?(?:previous|prior|above)\b", re.IGNORECASE),
+    re.compile(r"\byou\s+are\s+now\s+(?:a|an)\b", re.IGNORECASE),
+    re.compile(r"\bsystem\s*prompt\b", re.IGNORECASE),
+    re.compile(r"\breveal\s+(?:your|the)\s+(?:system\s+)?prompt\b", re.IGNORECASE),
     # Swahili/Sheng regional attack filters (The East African Guardrail List)
-    re.compile(r"\bpuuza\s+maelekezo\b", re.I),  # "Ignore instructions"
-    re.compile(r"\bsahau\s+maagizo\b", re.I),  # "Forget directions/orders"
+    re.compile(r"\bpuuza\s+maelekezo\b", re.IGNORECASE),  # "Ignore instructions"
+    re.compile(r"\bsahau\s+maagizo\b", re.IGNORECASE),  # "Forget directions/orders"
     re.compile(
-        r"\bacha\s+kufuata\s+kanuni\b", re.I
+        r"\bacha\s+kufuata\s+kanuni\b", re.IGNORECASE
     ),  # "Stop following guidelines/rules"
     # Redundant check for bracket block tags
-    re.compile(r"</?\s*ctx[_a-z0-9]*\s*>", re.I),
+    re.compile(r"</?\s*ctx[_a-z0-9]*\s*>", re.IGNORECASE),
 ]
 
 
@@ -113,8 +114,6 @@ _SECRET_PATTERNS = [
 
 class EmbeddedSecretError(ValueError):
     """Triggered when corporate cryptographic data is detected inside open text buffers."""
-
-    pass
 
 
 def assert_no_embedded_secrets(payload: str) -> None:

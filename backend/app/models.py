@@ -15,8 +15,8 @@ from datetime import datetime
 from decimal import Decimal  # Guarding against floating-point transaction errors
 from typing import Any
 
-from app.database import Base
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -26,10 +26,13 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import Enum as EnumSQL
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
 
 
 # ==============================================================================
@@ -38,7 +41,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 class OrderStatus(enum.Enum):
     PENDING = "pending"
     PAID = "paid"
-    SHIPPING = "shipping"
+    SHIPPED = "shipped"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
 
@@ -63,6 +66,47 @@ class HandoverStatus(enum.Enum):
     NEEDS_HUMAN = "NEEDS_HUMAN"
     HUMAN_ACTIVE = "HUMAN_ACTIVE"
     RESOLVED = "RESOLVED"
+
+
+class HandoverEventStatus(enum.Enum):
+    """Lifecycle of a single `HandoverEvent` audit row — distinct from the
+    live per-customer `HandoverStatus` above. New statuses can be appended
+    here without touching the notification engine."""
+
+    WAITING = "WAITING"
+    ACCEPTED = "ACCEPTED"
+    RESOLVED = "RESOLVED"
+    CLOSED = "CLOSED"
+
+
+class HandoverReasonCode(enum.Enum):
+    """Machine-readable reason a conversation was escalated to a human.
+    The frontend maps each code to a human-readable label
+    (see app/handover/reason_codes.py) — never display the raw code."""
+
+    CUSTOMER_REQUESTED_HUMAN = "CUSTOMER_REQUESTED_HUMAN"
+    DISCOUNT_NEGOTIATION = "DISCOUNT_NEGOTIATION"
+    BULK_ORDER = "BULK_ORDER"
+    PAYMENT_FAILURE = "PAYMENT_FAILURE"
+    ORDER_DISPUTE = "ORDER_DISPUTE"
+    COMPLAINT = "COMPLAINT"
+    REFUND_REQUEST = "REFUND_REQUEST"
+    DAMAGED_PRODUCT = "DAMAGED_PRODUCT"
+    CUSTOM_ORDER = "CUSTOM_ORDER"
+    ACCOUNT_ACCESS_REQUIRED = "ACCOUNT_ACCESS_REQUIRED"
+    BUSINESS_RULE_TRIGGERED = "BUSINESS_RULE_TRIGGERED"
+
+
+# Default per-channel notification configuration — used both as the ORM
+# column default (new rows) and as the merge-in fallback anywhere
+# `User.handover_notifications` might be missing a channel (e.g. rows
+# written before a new channel key existed). Single source of truth so the
+# API layer and the notification engine can never disagree on defaults.
+DEFAULT_HANDOVER_NOTIFICATIONS: dict[str, dict[str, Any]] = {
+    "dashboard": {"enabled": True, "delay_minutes": 0},
+    "whatsapp": {"enabled": True, "delay_minutes": 0},
+    "email": {"enabled": True, "delay_minutes": 5},
+}
 
 
 class BusinessType(enum.Enum):
@@ -94,6 +138,7 @@ class User(Base):
     business_name: Mapped[str] = mapped_column(String(150), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     knowledge_base_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_location: Mapped[str | None] = mapped_column(String(300), nullable=True)
     business_type: Mapped[BusinessType] = mapped_column(
         EnumSQL(BusinessType), default=BusinessType.retail, nullable=False
     )
@@ -101,46 +146,58 @@ class User(Base):
         String(100), unique=True, nullable=True
     )
     whatsapp_phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    handover_notifications: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=lambda: DEFAULT_HANDOVER_NOTIFICATIONS,
+        server_default=text(
+            '\'{"dashboard": {"enabled": true, "delay_minutes": 0}, '
+            '"whatsapp": {"enabled": true, "delay_minutes": 0}, '
+            '"email": {"enabled": true, "delay_minutes": 5}}\'::json'
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     # Direct ownership relationships backed by unit tracking lifecycle cascades
-    products: Mapped[list["Product"]] = relationship(
+    products: Mapped[list[Product]] = relationship(
         "Product", back_populates="business", cascade="all, delete-orphan"
     )
-    categories: Mapped[list["Category"]] = relationship(
+    categories: Mapped[list[Category]] = relationship(
         "Category", back_populates="business", cascade="all, delete-orphan"
     )
-    orders: Mapped[list["Order"]] = relationship(
+    orders: Mapped[list[Order]] = relationship(
         "Order", back_populates="business"
     )  # Protected via SET NULL behavior
-    conversations: Mapped[list["Conversation"]] = relationship(
+    conversations: Mapped[list[Conversation]] = relationship(
         "Conversation", back_populates="business", cascade="all, delete-orphan"
     )
-    conversation_states: Mapped[list["ConversationState"]] = relationship(
+    conversation_states: Mapped[list[ConversationState]] = relationship(
         "ConversationState",
         back_populates="business",
         foreign_keys="ConversationState.business_id",
         cascade="all, delete-orphan",
     )
-    chat_messages: Mapped[list["ChatMessage"]] = relationship(
+    chat_messages: Mapped[list[ChatMessage]] = relationship(
         "ChatMessage", back_populates="business", cascade="all, delete-orphan"
     )
-    customers: Mapped[list["Customer"]] = relationship(
+    customers: Mapped[list[Customer]] = relationship(
         "Customer", back_populates="business", cascade="all, delete-orphan"
     )
-    carts: Mapped[list["Cart"]] = relationship(
+    carts: Mapped[list[Cart]] = relationship(
         "Cart", back_populates="business", cascade="all, delete-orphan"
     )
-
+    handover_events: Mapped[list[HandoverEvent]] = relationship(
+        "HandoverEvent", back_populates="business", cascade="all, delete-orphan"
+    )
     # Reverse reference lookups handled safely via viewonly boundaries
-    selected_conversation_states: Mapped[list["ConversationState"]] = relationship(
+    selected_conversation_states: Mapped[list[ConversationState]] = relationship(
         "ConversationState",
         foreign_keys="ConversationState.selected_business_id",
         viewonly=True,
     )
-    marketplace_sessions: Mapped[list["MarketplaceSession"]] = relationship(
+    marketplace_sessions: Mapped[list[MarketplaceSession]] = relationship(
         "MarketplaceSession",
         foreign_keys="MarketplaceSession.selected_business_id",
         viewonly=True,
@@ -175,13 +232,11 @@ class Category(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    business: Mapped["User"] = relationship("User", back_populates="categories")
-    products: Mapped[list["Product"]] = relationship(
-        "Product", back_populates="category"
-    )
+    business: Mapped[User] = relationship("User", back_populates="categories")
+    products: Mapped[list[Product]] = relationship("Product", back_populates="category")
 
     # Reverse tracking for marketplace navigation metrics
-    conversation_states: Mapped[list["ConversationState"]] = relationship(
+    conversation_states: Mapped[list[ConversationState]] = relationship(
         "ConversationState",
         foreign_keys="ConversationState.selected_category_id",
         viewonly=True,
@@ -229,12 +284,12 @@ class Product(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    business: Mapped["User"] = relationship("User", back_populates="products")
-    category: Mapped["Category"] = relationship("Category", back_populates="products")
-    orders: Mapped[list["Order"]] = relationship("Order", back_populates="product")
+    business: Mapped[User] = relationship("User", back_populates="products")
+    category: Mapped[Category] = relationship("Category", back_populates="products")
+    orders: Mapped[list[Order]] = relationship("Order", back_populates="product")
 
     # Reverse tracking helper for analytics pipelines
-    marketplace_sessions: Mapped[list["MarketplaceSession"]] = relationship(
+    marketplace_sessions: Mapped[list[MarketplaceSession]] = relationship(
         "MarketplaceSession",
         foreign_keys="MarketplaceSession.selected_product_id",
         viewonly=True,
@@ -279,14 +334,17 @@ class Customer(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    conversations: Mapped[list["Conversation"]] = relationship(
+    conversations: Mapped[list[Conversation]] = relationship(
         "Conversation", back_populates="customer"
     )
-    conversation_states: Mapped[list["ConversationState"]] = relationship(
+    conversation_states: Mapped[list[ConversationState]] = relationship(
         "ConversationState", back_populates="customer"
     )
-    orders: Mapped[list["Order"]] = relationship("Order", back_populates="customer")
-    business: Mapped["User"] = relationship("User", back_populates="customers")
+    handover_events: Mapped[list[HandoverEvent]] = relationship(
+        "HandoverEvent", back_populates="customer", cascade="all, delete-orphan"
+    )
+    orders: Mapped[list[Order]] = relationship("Order", back_populates="customer")
+    business: Mapped[User] = relationship("User", back_populates="customers")
 
 
 # ==============================================================================
@@ -321,10 +379,10 @@ class Conversation(Base):
     )
     delivery_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
-    customer: Mapped["Customer"] = relationship(
+    customer: Mapped[Customer] = relationship(
         "Customer", back_populates="conversations"
     )
-    business: Mapped["User"] = relationship("User", back_populates="conversations")
+    business: Mapped[User] = relationship("User", back_populates="conversations")
 
 
 # ==============================================================================
@@ -379,16 +437,16 @@ class ConversationState(Base):
         nullable=True,
     )
 
-    customer: Mapped["Customer"] = relationship(
+    customer: Mapped[Customer] = relationship(
         "Customer", back_populates="conversation_states"
     )
-    business: Mapped["User"] = relationship(
+    business: Mapped[User] = relationship(
         "User", back_populates="conversation_states", foreign_keys=[business_id]
     )
-    selected_business: Mapped["User | None"] = relationship(
+    selected_business: Mapped[User | None] = relationship(
         "User", foreign_keys=[selected_business_id]
     )
-    selected_category: Mapped["Category | None"] = relationship(
+    selected_category: Mapped[Category | None] = relationship(
         "Category", foreign_keys=[selected_category_id]
     )
 
@@ -408,15 +466,61 @@ class MarketplaceSession(Base):
         String(20), unique=True, index=True, nullable=False
     )
     pending_action: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # The top-level business classification the customer picked (BusinessType
+    # value: 'retail', 'food', 'services'...). This column is ONLY ever a
+    # business type.
+    #
+    # It used to double as the category slot: handle_marketplace_step assigned
+    # the chosen Category *name* here (e.g. 'Handbag'), and ~14 downstream call
+    # sites read it back as `category_name=`. That worked by accident but made
+    # the field unreadable, and it meant the real business type had nowhere to
+    # live. Category selection now has its own column below.
     selected_business_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )
+
+    # The Category NAME the customer is currently browsing, scoped to
+    # selected_business_id. Names (not ids) because every consumer —
+    # get_category_id_for_business, get_products_for_business_category,
+    # resolve_product_choice, format_product_list_for_business — resolves by
+    # (business_id, category_name), and Category enforces a
+    # UniqueConstraint('name', 'business_id') so the pair is unambiguous.
+    # Sized to match Category.name (String(100)).
+    selected_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     selected_business_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
+
+    last_product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("products.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # When last_product_id was set. _resolve_photo_target only trusts the
+    # "last viewed product" fallback inside STALE_PHOTO_WINDOW of this
+    # timestamp.
+    #
+    # Needs its own column: that freshness check used to read updated_at, which
+    # refreshes on every session mutation and (since
+    # get_or_create_marketplace_session now touches it per message, to make the
+    # session TTL measure real inactivity) is effectively always "now". Reusing
+    # updated_at would leave the guard permanently satisfied and silently
+    # inert.
+    last_product_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    last_product: Mapped[Product | None] = relationship(
+        "Product", foreign_keys=[last_product_id]
+    )
+
     selected_product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),
@@ -436,10 +540,10 @@ class MarketplaceSession(Base):
     )
 
     # ORM Navigation Helpers
-    selected_business: Mapped["User | None"] = relationship(
+    selected_business: Mapped[User | None] = relationship(
         "User", foreign_keys=[selected_business_id]
     )
-    selected_product: Mapped["Product | None"] = relationship(
+    selected_product: Mapped[Product | None] = relationship(
         "Product", foreign_keys=[selected_product_id]
     )
 
@@ -469,7 +573,7 @@ class Cart(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    business: Mapped["User"] = relationship("User", back_populates="carts")
+    business: Mapped[User] = relationship("User", back_populates="carts")
 
 
 # ==============================================================================
@@ -521,9 +625,9 @@ class Order(Base):
     )
     snapshot_business_name: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    customer: Mapped["Customer"] = relationship("Customer", back_populates="orders")
-    product: Mapped["Product"] = relationship("Product", back_populates="orders")
-    business: Mapped["User"] = relationship("User", back_populates="orders")
+    customer: Mapped[Customer] = relationship("Customer", back_populates="orders")
+    product: Mapped[Product] = relationship("Product", back_populates="orders")
+    business: Mapped[User] = relationship("User", back_populates="orders")
 
 
 # ==============================================================================
@@ -558,4 +662,86 @@ class ChatMessage(Base):
         DateTime(timezone=True), server_default=func.now(), index=True
     )
 
-    business: Mapped["User"] = relationship("User", back_populates="chat_messages")
+    business: Mapped[User] = relationship("User", back_populates="chat_messages")
+
+
+# ==============================================================================
+# HANDOVER EVENT
+# ==============================================================================
+class HandoverEvent(Base):
+    """Audit-trail row created every time AISHA emits [HANDOVER_REQUIRED].
+
+    One row per escalation (not per customer) — unlike `ConversationState`,
+    which only tracks the *current* live status for a customer, this is an
+    immutable-except-status event log the notification engine reads once to
+    build a `NotificationPayload`, and that later status updates (accepted /
+    resolved) get written back onto.
+
+    `conversation_id` points at `ConversationState.id` — the closest existing
+    concept of "a conversation" in this schema, since `Conversation` rows are
+    individual chat messages, not a conversation thread entity.
+    """
+
+    __tablename__ = "handover_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        "conversation_state_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversation_states.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Snapshots — survive even if the customer record's name/phone later changes.
+    customer_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    customer_phone: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    reason_code: Mapped[HandoverReasonCode] = mapped_column(
+        EnumSQL(HandoverReasonCode), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_last_message: Mapped[str] = mapped_column(Text, nullable=False)
+
+    waiting_start_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    status: Mapped[HandoverEventStatus] = mapped_column(
+        EnumSQL(HandoverEventStatus),
+        default=HandoverEventStatus.WAITING,
+        nullable=False,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    business: Mapped[User] = relationship("User", back_populates="handover_events")
+    conversation_state: Mapped[ConversationState] = relationship("ConversationState")
+    customer: Mapped[Customer] = relationship("Customer")
+
+    @property
+    def waiting_seconds(self) -> float:
+        """Seconds elapsed since `waiting_start_time`, computed on read —
+        waiting time is intentionally never stored."""
+        now = datetime.now(self.waiting_start_time.tzinfo)
+        return max(0.0, (now - self.waiting_start_time).total_seconds())

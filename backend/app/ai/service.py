@@ -1,10 +1,15 @@
-import uuid
 import re
+import uuid
+
+from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.ai import cache
-from app.ai.prompt_builder import build_system_prompt
 from app.ai.provider import get_ai_response
 from app.ai.token_utils import truncate_history_to_token_limit
+from app.handover import HandoverService
+from app.knowledge_base.manager import KnowledgeBaseManager
 from app.models import (
     Category,
     Conversation,
@@ -16,10 +21,64 @@ from app.models import (
     Product,
     User,
 )
-from sqlalchemy import func
-from sqlalchemy.orm import Session
 
 SWITCH_HINT = "\n\n_Reply 'menu' to browse other stores anytime._"
+
+# Emitted by the AI itself (as instructed in SYSTEM_PROMPT_SUFFIX below)
+# when the customer's message isn't a real question it can meaningfully
+# answer — e.g. noise, a stray word, or an attempt at a menu selection
+# that slipped through. Same mechanism as [HANDOVER_REQUIRED] and
+# [SHOW_CATEGORIES] below: a tag the model puts in its own output that
+# our code detects and strips before the customer ever sees it.
+#
+# This REPLACES the old approach of pre-filtering with a hardcoded
+# keyword list (BUSINESS_QUESTION_KEYWORDS in marketplace_flow.py) before
+# ever calling the AI. That list could only ever catch phrasings someone
+# had already thought to add — real customers kept finding phrasings
+# ("what time do you guys open?") that weren't in it, and got a flat
+# "sorry, I didn't understand" instead of an answer. Now the AI is always
+# asked (for anything that isn't pure noise — see router.py's
+# _is_negligible_input) and decides FOR ITSELF whether it has a
+# meaningful answer, using its actual understanding of the message
+# rather than string matching.
+NOT_UNDERSTOOD_TAG = "[NOT_UNDERSTOOD]"
+
+# Appended to every business's system prompt after it's built/cached
+# (see get_business_prompt below). Two jobs:
+#   1. Tells the model when to emit NOT_UNDERSTOOD_TAG instead of
+#      guessing at an answer to noise/menu-selection text.
+#   2. Fixes the "AI hedges instead of using data it already has"
+#      pattern — e.g. a customer asking for a size that isn't listed
+#      getting "it doesn't specify size availability, would you like me
+#      to check?" instead of just stating the sizes that ARE listed,
+#      which were sitting right there in the product data the whole
+#      time.
+#
+# Appended in service.py rather than folded into build_system_prompt()
+# so it always applies — including to prompts already cached in Redis by
+# get_business_prompt() — without needing a cache-bust when this wording
+# changes. If build_system_prompt already carries similar instructions,
+# this reinforces rather than conflicts with them.
+SYSTEM_PROMPT_SUFFIX = (
+    "\n\n---\n"
+    f"If the customer's message is NOT a real question and not something "
+    f"you can meaningfully respond to — e.g. it looks like noise, a "
+    f"stray word or character, or an attempt to pick a product/size/"
+    f"quantity/menu option rather than ask something — reply with ONLY "
+    f"the exact tag {NOT_UNDERSTOOD_TAG} and nothing else. Do not guess "
+    f"at an answer in that case.\n\n"
+    "Otherwise, answer normally using the product data and knowledge "
+    "base above. If you don't have an exact answer for what was asked, "
+    "do not just say you don't know or ask a vague follow-up question. "
+    "Instead:\n"
+    "1. Check if there is a closely related fact you DO have (e.g. if "
+    "asked for a size that isn't listed, state the sizes that ARE listed; "
+    "if asked about a color/flavor that isn't listed, state what IS "
+    "available), and lead with that.\n"
+    "2. Only if there is truly nothing related in the data, say so "
+    "plainly and offer to connect them with the team — do not guess or "
+    "invent details that aren't in the product data or knowledge base."
+)
 
 SWAHILI_INDICATORS = {
     # greetings
@@ -118,55 +177,31 @@ URGENT_KEYWORDS = {
 }
 
 
-def get_business_prompt(business_id: uuid.UUID, db: Session) -> str:
-    """Build system prompt from business data, checking Redis cache first."""
-    # Step 1 - check Redis first
+async def build_prompt_from_context(
+    business_id: uuid.UUID, merchant_name: str, async_session: AsyncSession
+) -> str:
+    """
+    Build system prompt using KnowledgeBaseManager to retrieve from wiki_chunks.
+    Checks Redis cache first, then builds fresh prompt on miss.
+    """
     cached = cache.get_cached_business_prompt(business_id)
     if cached:
         print(f"[Cache HIT] Business {business_id} prompt from redis")
         return cached
 
-    # Step 2 - cache miss, fetch from PostgreSQL
-    print(f"[Cache MISS] Fetching business {business_id} from PostgreSQL")
-
-    user = db.query(User).filter(User.id == business_id).first()
-    if not user:
-        raise ValueError(f"Business owner with id {business_id} not found")
-
-    products = (
-        db.query(Product)
-        .filter(Product.business_id == business_id)
-        .filter(Product.is_available.is_(True))
-        .all()
+    print(
+        f"[Cache MISS] Building prompt for business {business_id} from knowledge base"
     )
 
-    products_list = [
-        {
-            "name": p.name,
-            "price": float(p.price),
-            "is_available": p.is_available,
-            "description": p.description,
-            "category": p.category,
-            "variant_label": p.variant_label,
-            "variant_options": p.variant_options,
-            "unit": p.unit,
-            "upsell_text": p.upsell_text,
-            "image_url": p.image_url,
-        }
-        for p in products
-    ]
+    manager = KnowledgeBaseManager(session=async_session)
 
-    # Fetch knowledge base for the business
-    knowledge_base = user.knowledge_base_text or ""
-    business_type = getattr(user, "business_type", "retail") or "retail"
-
-    prompt = build_system_prompt(
-        business_name=user.business_name,
-        products=products_list,
-        knowledge_base=knowledge_base,
-        business_type=business_type,
+    payload = await manager.build_prompt_payload(
+        business_id=business_id,
+        merchant_name=merchant_name,
+        customer_message="",
     )
 
+    prompt = manager.render_and_verify(payload)
     cache.cache_business_prompt(business_id, prompt)
 
     return prompt
@@ -224,14 +259,14 @@ def save_message(
     delivery_status: str | None = None,
 ) -> None:
     """Save a message to PostgreSQL and update Redis cache."""
-    
+
     ROLE_MAP = {
         "user": MessageRole.Customer,
         "customer": MessageRole.Customer,
         "assistant": MessageRole.Assistant,
         "human": MessageRole.Human,
     }
-    
+
     LANGUAGE_MAP = {"EN": Language.en, "SW": Language.sw}
 
     # saves to PostgreSQL permanently and updates Redis simultaneously
@@ -258,8 +293,7 @@ def save_message(
 def normalize_phone(phone_number: str) -> str:
     """Normalize WhatsApp phone numbers to consistent format."""
     phone = phone_number.strip()
-    if phone.startswith("whatsapp:"):
-        phone = phone[len("whatsapp:") :]
+    phone = phone.removeprefix("whatsapp:")
     phone = phone.strip()
     if not phone.startswith("+"):
         phone = "+" + phone
@@ -267,7 +301,10 @@ def normalize_phone(phone_number: str) -> str:
 
 
 def get_or_create_customer(
-    phone_number: str, business_id: uuid.UUID, db: Session, profile_name: str | None = None
+    phone_number: str,
+    business_id: uuid.UUID,
+    db: Session,
+    profile_name: str | None = None,
 ) -> Customer:
     """Find a customer by phone number or create them if first message."""
     # Phone number is the customer's only identity — no accounts needed.
@@ -282,7 +319,9 @@ def get_or_create_customer(
     )
 
     if not customer:
-        customer = Customer(phone_number=phone, business_id=business_id, name=profile_name)
+        customer = Customer(
+            phone_number=phone, business_id=business_id, name=profile_name
+        )
         db.add(customer)
         db.commit()
         db.refresh(customer)
@@ -309,6 +348,19 @@ def detect_category_browse_request(response: str) -> bool:
     return "[SHOW_CATEGORIES]" in response
 
 
+def detect_not_understood(response: str) -> bool:
+    """True when the AI emitted NOT_UNDERSTOOD_TAG — its own signal that
+    the customer's message wasn't a real question it could meaningfully
+    answer (noise, a menu-selection attempt, etc). Checked the same way
+    as detect_handover/detect_category_browse_request: a plain substring
+    check on the raw (not-yet-tag-stripped) response. See
+    SYSTEM_PROMPT_SUFFIX for the instruction that produces this tag, and
+    process_customer_message for how callers (router.py) use the
+    resulting "not_understood" flag to fall back to deterministic
+    flow-specific replies instead of showing a hedgy AI answer."""
+    return NOT_UNDERSTOOD_TAG in response
+
+
 def classify_handover_urgency(customer_message: str) -> str:
     """Classify handover urgency based on message keywords."""
     text_lower = customer_message.lower()
@@ -324,6 +376,7 @@ def clean_response(response: str) -> str:
     """
     response = response.replace("[HANDOVER_REQUIRED]", "")
     response = response.replace("[SHOW_CATEGORIES]", "")
+    response = response.replace(NOT_UNDERSTOOD_TAG, "")
     response = re.sub(r"\(.*?handover.*?\)", "", response, flags=re.IGNORECASE)
     return response.strip()
 
@@ -408,53 +461,50 @@ def format_products_in_category(products: list) -> str:
     return "\n".join(lines)
 
 
-def process_customer_message(
+async def process_customer_message(
     phone_number: str,
     message_text: str,
     business_id: uuid.UUID,
     db: Session,
+    async_db: AsyncSession | None = None,
     profile_name=None,
 ) -> dict:
     """Main orchestrator — called by the WhatsApp webhook on every incoming customer message."""
     # 1. Find or create customer
-    customer = get_or_create_customer(phone_number,business_id, db, profile_name)
+    customer = get_or_create_customer(phone_number, business_id, db, profile_name)
 
     # 2. Detect language for logging
     language = detect_language(message_text)
 
-    # 3. Save customer message
-    save_message(
-        customer_id=customer.id,
-        business_id=business_id,
-        role="user",
-        content=message_text,
-        language=language,
-        db=db,
-    )
+    # NOTE: the customer's message is NOT saved here. message_processor.py
+    # (this function's only caller, both via _ask_ai() and the bottom
+    # AI fall-through) already saves it, unconditionally, before this
+    # function is ever invoked — saving it again here duplicated every
+    # customer message in the conversation log. Step 6 below already
+    # handles the case where `history` (fetched from cache/DB) doesn't
+    # yet reflect the just-saved message, so removing this doesn't
+    # change what the AI sees — it only stops the double DB write.
+    # If process_customer_message() ever gains a second caller that
+    # DOESN'T already save the user's message upstream, this needs to
+    # move back or be made conditional.
 
     state = get_or_create_conversation_state(customer.id, business_id, db)
 
-    if state.status in (HandoverStatus.HUMAN_ACTIVE, HandoverStatus.NEEDS_HUMAN):
-        # Customer is already with a human; send acknowledgment instead of silence
-        waiting_msg = "You're connected with our team — they'll be with you shortly!"
-        save_message(
-            customer_id=customer.id,
-            business_id=business_id,
-            role="assistant",
-            content=waiting_msg,
-            language=language,
-            db=db,
-        )
-        return {
-            "response": waiting_msg,
-            "needs_handover": True,
-            "ai_responded": False,
-            "customer_id": customer.id,
-            "language": language,
-        }
-
-    # A new message after the owner closed it out — AI resumes.
+    # NEEDS_HUMAN / HUMAN_ACTIVE / RESOLVED are informational for the
+    # dashboard only — they are NOT a gate here. This function used to
+    # short-circuit with a fixed "you're connected with our team" reply
+    # whenever status was HUMAN_ACTIVE/NEEDS_HUMAN, before the message
+    # was even looked at — that's why every customer message got back
+    # an identical canned string regardless of what they actually said,
+    # and why the conversation could never move forward until an owner
+    # resolved it from the dashboard. AISHA now answers every message
+    # normally no matter the status. The owner's own reply path
+    # (send_manual_reply in the conversations router) is a completely
+    # separate code path from this one, so there's no risk of AISHA
+    # talking over a live human reply by removing this gate — see the
+    # matching comment on the handover gate in message_processor.py.
     if state.status == HandoverStatus.RESOLVED:
+        # A new message after the owner closed it out — AI resumes.
         state.status = HandoverStatus.AI_ACTIVE
         db.commit()
 
@@ -499,14 +549,35 @@ def process_customer_message(
                 "language": language,
                 "response_language": language,
                 "ai_responded": True,
+                "not_understood": False,
             }
         else:
             # No clean match — clear the flag and let the normal LLM flow handle it
             state.pending_action = None
             db.commit()
 
-    # 4. Build prompt from real database data
-    system_prompt = get_business_prompt(business_id, db)
+    # 4. Build prompt from knowledge base
+    if async_db is None:
+        raise ValueError("async_db parameter is required for knowledge base retrieval")
+
+    user = db.query(User).filter(User.id == business_id).first()
+    if not user:
+        raise ValueError(f"Business owner with id {business_id} not found")
+
+    system_prompt = await build_prompt_from_context(
+        business_id=business_id,
+        merchant_name=user.business_name,
+        async_session=async_db,
+    )
+
+    # 4b. Append the not-understood + grounding instructions so the model
+    # (a) tells us plainly when it can't meaningfully answer, via
+    # NOT_UNDERSTOOD_TAG, instead of us guessing that with a keyword
+    # list, and (b) prefers "here's the closest related answer I DO
+    # have" over hedging when the exact fact isn't in the product data
+    # or knowledge base. See SYSTEM_PROMPT_SUFFIX docstring above for why
+    # this is appended here rather than baked into build_system_prompt().
+    system_prompt = system_prompt + SYSTEM_PROMPT_SUFFIX
 
     # 5. Fetch conversation history from database
     history = get_conversation_history(customer.id, business_id, db)
@@ -529,6 +600,12 @@ def process_customer_message(
     # 9b. Check whether AISHA wants to show the category picker
     show_categories = detect_category_browse_request(clean)
 
+    # 9c. Check whether AISHA is signaling it couldn't meaningfully
+    # answer this message. Checked on `clean` (post language-tag-strip,
+    # pre other-tag-strip) same as the two checks above — must happen
+    # BEFORE clean_response() removes the tag below.
+    not_understood = detect_not_understood(clean)
+
     # 10. Clean internal tags from response
     clean = clean_response(clean)
 
@@ -545,7 +622,12 @@ def process_customer_message(
     # 11. Classify handover urgency (used by dashboard prioritization)
     urgency = classify_handover_urgency(message_text) if needs_handover else None
 
-    # 12. Save AISHA's response
+    # 12. Save AISHA's response. Deliberately still saved to the
+    # conversation log even when not_understood is True (clean will just
+    # be empty/near-empty after tag-stripping) — callers in router.py
+    # send their OWN fallback text to the customer and log that
+    # separately via _send_fallback_reply, so this save is only about
+    # keeping the transcript honest about what the AI actually returned.
     save_message(
         customer_id=customer.id,
         business_id=business_id,
@@ -558,7 +640,15 @@ def process_customer_message(
     if needs_handover:
         state.status = HandoverStatus.NEEDS_HUMAN
         db.commit()
-        notify_handover(customer.id, business_id, message_text, urgency, db)
+        notify_handover(
+            customer.id,
+            business_id,
+            message_text,
+            urgency,
+            db,
+            conversation_id=state.id,
+            ai_summary=clean,
+        )
 
     return {
         "response": clean,
@@ -568,6 +658,7 @@ def process_customer_message(
         "language": language,
         "response_language": detected_language,
         "ai_responded": True,
+        "not_understood": not_understood,
     }
 
 
@@ -577,22 +668,31 @@ def notify_handover(
     customer_message: str,
     urgency: str,
     db: Session,
+    *,
+    conversation_id: uuid.UUID,
+    ai_summary: str | None = None,
 ) -> None:
     """
-    Alerts when AISHA triggers a handover.
-    Logs to console. Dashboard picks up needs_human conversations via polling/websocket.
+    Creates the HandoverEvent audit row and dispatches notifications across
+    every channel the business has enabled (Dashboard/WhatsApp/Email), each
+    respecting its own configured delay. See app/handover/handover_service.py.
     """
-    user = db.query(User).filter(User.id == business_id).first()
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
-
     phone = customer.phone_number if customer else "unknown"
-    business = user.business_name if user else f"business {business_id}"
+    customer_name = customer.name if customer else None
 
-    print(
-        f"\n[HANDOVER {urgency.upper()}]\n"
-        f"Business : {business}\n"
-        f"Customer : {phone}\n"
-        f"Message  : {customer_message[:120]}\n"
+    HandoverService.create_event_and_notify(
+        db,
+        business_id=business_id,
+        conversation_id=conversation_id,
+        customer_id=customer_id,
+        customer_name=customer_name,
+        customer_phone=phone,
+        customer_last_message=customer_message,
+        ai_summary=ai_summary,
+        reason=f"[{urgency.upper()}] {customer_message[:200]}"
+        if urgency
+        else customer_message,
     )
 
 

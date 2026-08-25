@@ -4,7 +4,6 @@ Pydantic schemas for the conversations API.
 
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,7 +16,7 @@ class MessageResponse(BaseModel):
     content: str
     language: str
     created_at: datetime
-    delivery_status: Optional[str] = None
+    delivery_status: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -32,7 +31,7 @@ class ConversationSummary(BaseModel):
 
     customer_id: uuid.UUID
     customer_phone: str
-    customer_name: Optional[str]
+    customer_name: str | None
     last_message: str
     last_message_time: datetime
     total_messages: int
@@ -46,6 +45,26 @@ class ConversationThread(BaseModel):
 
     customer_id: uuid.UUID
     customer_phone: str
-    customer_name: Optional[str]
+    customer_name: str | None
     conversation_status: str
     messages: list[MessageResponse]
+
+
+class HandoverEventOut(BaseModel):
+    """
+    One AI→human escalation event, as returned by
+    GET /conversations/{customer_id}/handover-history.
+    resolved_at is None while the escalation is still open —
+    the dashboard uses that to separate "needs attention now"
+    from "already dealt with" in the same list.
+    """
+
+    id: uuid.UUID
+    reason_code: str
+    reason: str
+    ai_summary: str | None = None
+    customer_last_message: str
+    created_at: datetime
+    resolved_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)

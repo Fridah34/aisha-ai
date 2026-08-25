@@ -8,10 +8,15 @@
 
 import os
 
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.orm import Session
+
 from app.auth.dependencies import get_current_user
 from app.auth.utils import (
     create_access_token,
     hash_password,
+    refresh_access_token,
+    verify_access_token,
     verify_password,
 )
 from app.crud import get_user_by_email
@@ -24,12 +29,10 @@ from app.schema import (
     UserRegister,
     UserResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.orm import Session
 
 # ===================ENVIRONMENT CONFIG====================
 # Cookies marked `secure=True` are only stored/sent by browsers over HTTPS.
-# Local dev runs on plain HTTP (localhost:5173 / 127.0.0.1:8000), so `secure`
+# Local dev runs on plain HTTP (localhost:5173 / localhost:8000), so `secure`
 # must be False there or the browser silently drops the cookie entirely.
 # Set ENVIRONMENT=production in your deployment's .env once real HTTPS is in place.
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -79,7 +82,7 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         db.refresh(new_user)
         return {"user": UserResponse.model_validate(new_user)}
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         db.rollback()
         print("\n ACTUAL REGISTRATION ERROR:", str(e))
         import traceback
@@ -127,7 +130,7 @@ def register_google(user_data: UserGoogleRegister, db: Session = Depends(get_db)
         db.refresh(new_user)
 
         return new_user
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         db.rollback()  # undo any changes made during the creation process
         print("\n ACTUAL REGISTRATION ERROR:", str(e))
         import traceback
@@ -186,7 +189,17 @@ def login(
         httponly=True,
         secure=IS_PRODUCTION,
         samesite="lax",
-        max_age=1800,
+        max_age=60 * 60 * 3,
+    )
+
+    refresh_token = refresh_access_token(data={"sub": user.email})
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=60 * 60 * 24,  # 24hours , matches refresh_access_token()
     )
     return {"user": UserResponse.model_validate(user)}
 
@@ -236,3 +249,30 @@ def verify_token(current_user: User = Depends(get_current_user)):
         "user": UserResponse.model_validate(current_user),
         "message": "Token is valid",
     }
+
+
+# auth/router.py — refresh token endpoint
+@router.post("/refresh")
+def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+
+    token_data = verify_access_token(refresh_token)
+    if token_data is None or token_data.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    user = get_user_by_email(db, token_data["sub"])
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    new_access_token = create_access_token(data={"sub": user.email})
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=1800,
+    )
+    return {"message": "Token refreshed"}

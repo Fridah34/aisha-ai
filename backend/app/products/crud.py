@@ -7,9 +7,10 @@ spinning up an HTTP request.
 
 import uuid
 
+from sqlalchemy.orm import Session, joinedload
+
 from app.models import Product
 from app.products.schemas import ProductCreate, ProductUpdate
-from sqlalchemy.orm import Session, joinedload
 
 
 def get_products_for_business(db: Session, business_id: uuid.UUID) -> list[Product]:
@@ -39,9 +40,15 @@ def get_product_by_id(
     )
 
 
-def create_product(db: Session, product_data: ProductCreate) -> Product:
-    """Inserts a new product row and returns the created object."""
-    new_product = Product(**product_data.model_dump())
+def create_product(
+    db: Session, product_data: ProductCreate, business_id: uuid.UUID
+) -> Product:
+    """
+    Inserts a new product row and returns the created object.
+    business_id is passed in separately (from the authenticated user),
+    never from the client payload — ProductCreate has no business_id field.
+    """
+    new_product = Product(**product_data.model_dump(), business_id=business_id)
     db.add(new_product)
     db.commit()
     db.refresh(new_product)

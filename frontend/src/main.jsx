@@ -5,12 +5,15 @@ import App from './App.jsx'
 
 import { AuthProvider } from './hooks/useAuth'
 import { WebSocketProvider } from './context/WebSocketContext'
+import { ToastProvider } from './context/ToastContext'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
       <WebSocketProvider>
-        <App />
+        <ToastProvider>
+          <App />
+        </ToastProvider>
       </WebSocketProvider>
     </AuthProvider>
   </StrictMode>,

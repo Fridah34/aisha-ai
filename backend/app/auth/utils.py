@@ -4,7 +4,6 @@
 
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
 
 import jwt
 from passlib.context import CryptContext
@@ -27,7 +26,7 @@ pwd_context = CryptContext(
 
 SECRET_KEY = os.getenv("SECRET_KEY") or "change-me-in-production-super-secret-key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 3  # 3 hours
 
 # =========PASSWORD HASHING FUNCTIONS=======
 
@@ -43,7 +42,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # ==========JWT TOKEN FUNCTIONS=========
 
 
-def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -56,7 +55,7 @@ def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
-def verify_access_token(token: str) -> Optional[Dict]:
+def verify_access_token(token: str) -> dict | None:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
@@ -69,7 +68,7 @@ def verify_access_token(token: str) -> Optional[Dict]:
 # =========TOKEN REFRESH FUNCTIONS========
 
 
-def refresh_access_token(data: Dict) -> str:
+def refresh_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=7)
     to_encode.update({"exp": int(expire.timestamp()), "type": "refresh"})
@@ -89,6 +88,4 @@ def is_password_strong(password: str) -> bool:
         return False
     if not any(c.isdigit() for c in password):
         return False
-    if not any(c in "!@#$%^&*()-_=+[]{}|;:'\",.<>?/`~" for c in password):
-        return False
-    return True
+    return any(c in "!@#$%^&*()-_=+[]{}|;:'\",.<>?/`~" for c in password)

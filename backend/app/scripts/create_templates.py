@@ -5,10 +5,11 @@ Content API.Run this manually whenever you need to create or recreate a template
 Usage: python scripts/create_templates.py
 """
 
-import requests
-import os
 import json
-from dotenv import load_dotenv, find_dotenv
+import os
+
+import requests
+from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
@@ -81,9 +82,13 @@ def create_quick_reply_template():
 
 
 def create_browse_more_template():
-    """One-time setup - creates the post-checkout Quick Reply template.
-    Separate from aisha_cart_action_fridah bacause button labels/ids are
-    fixed at creation time; can't share a template with different buttons."""
+    """Post-checkout Quick Reply template. Confirmed via direct A/B
+    testing that single-button twilio/quick-reply templates do not
+    round-trip taps back to the webhook on this sandbox number — tested
+    with two different button ids (browse_more, see_more_items), both
+    failed identically. A 2-button version round-trips reliably. Pairs
+    Browse more with Track order, which reuses existing (previously
+    unwired) helpers in marketplace_flow.py."""
     payload = {
         "friendly_name": "aisha_post_checkout_fridah",
         "language": "en",
@@ -91,14 +96,15 @@ def create_browse_more_template():
         "types": {
             "twilio/quick-reply": {
                 "body": "{{1}}",
-                "actions": [{"title": "Browse more", "id": "browse_more"}],
+                "actions": [
+                    {"title": "Browse more", "id": "browse_more"},
+                    {"title": "Track order", "id": "track_order"},
+                ],
             }
         },
     }
     response = requests.post(
-        CONTENT_API_URL,
-        auth=(ACCOUNT_SID, AUTH_TOKEN),
-        json=payload,
+        CONTENT_API_URL, auth=(ACCOUNT_SID, AUTH_TOKEN), json=payload
     )
     data = response.json()
     print("\n=== BROWSE MORE TEMPLATE ===")
@@ -107,11 +113,11 @@ def create_browse_more_template():
 
 
 if __name__ == "__main__":
-    list_sid = create_list_picker_template()
-    quick_reply_sid = create_quick_reply_template()
+    # list_sid = create_list_picker_template()
+    # quick_reply_sid = create_quick_reply_template()
     browse_more_sid = create_browse_more_template()
 
     print("\n\n=== SAVE THESE TO YOUR .env ===")
-    print(f"TWILIO_LIST_PICKER_SID={list_sid}")
-    print(f"TWILIO_QUICK_REPLY_SID={quick_reply_sid}")
+    # print(f"TWILIO_LIST_PICKER_SID={list_sid}")
+    # print(f"TWILIO_QUICK_REPLY_SID={quick_reply_sid}")
     print(f"TWILIO_BROWSE_MORE_SID={browse_more_sid}")

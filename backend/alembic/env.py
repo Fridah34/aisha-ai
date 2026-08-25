@@ -5,10 +5,11 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from alembic import context
-from app.models import Base
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
+
+from alembic import context
+from app.models import Base
 
 load_dotenv()
 
@@ -33,7 +34,9 @@ if config.config_file_name is not None:
 
 def get_url():
     # Get database URL from environment variable
-    return os.getenv("DIRECT_DATABASE_URL", "postgresql://EVE.0798080246@localhost/aisha_db")
+    return os.getenv(
+        "DIRECT_DATABASE_URL", "postgresql://EVE.0798080246@localhost/aisha_db"
+    )
 
 
 def run_migrations_offline() -> None:

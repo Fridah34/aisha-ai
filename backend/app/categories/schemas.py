@@ -7,22 +7,21 @@ these schemas define the API contract.
 
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = None
+    description: str | None = None
     is_active: bool = True
 
 
 class CategoryUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = None
-    display_order: Optional[int] = None
-    is_active: Optional[bool] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+    display_order: int | None = None
+    is_active: bool | None = None
 
 
 class CategoryResponse(BaseModel):
@@ -37,11 +36,11 @@ class CategoryResponse(BaseModel):
     id: uuid.UUID
     business_id: uuid.UUID
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     display_order: int
     is_active: bool
     created_at: datetime
-    product_count: Optional[int] = None
+    product_count: int | None = None
 
     class Config:
         from_attributes = True
